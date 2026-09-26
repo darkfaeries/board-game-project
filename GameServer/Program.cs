@@ -4,13 +4,15 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<GameStore>();
+// builder.Services.AddHttpLogging(o => { });
 
 var app = builder.Build();
 
+// app.UseHttpLogging();
 app.UseWebSockets();
 
 // create request from client, opens a socket connection and returns the code
-app.MapPost("/ws/game/create", async (HttpContext context, GameStore store) =>
+app.Map("/ws/game/create", async (HttpContext context, GameStore store) =>
 {
     if (!context.WebSockets.IsWebSocketRequest) { context.Response.StatusCode = 400; return; }
 

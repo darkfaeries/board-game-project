@@ -3,7 +3,7 @@ import json
 import sys
 import websockets
 
-HOST = "ws://localhost:5000"
+HOST = "ws://localhost:5285"
 
 async def create_game():
     """Open a create-socket, print the code the server sends first, and return it."""
