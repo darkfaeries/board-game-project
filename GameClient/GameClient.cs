@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Buffers;
 
 namespace GameClient;
 
@@ -11,6 +12,7 @@ public class GameClient
 
     public string? GameCode { get; private set; }
     public bool IsConnected => _ws?.State == WebSocketState.Open;
+    public event Action<int>? PlayerCountChanged;
 
     public GameClient(string baseUrl) => _baseUrl = baseUrl;
 
@@ -32,10 +34,12 @@ public class GameClient
             using var doc = JsonDocument.Parse(json);
             var code = doc.RootElement.GetProperty("Code").GetString();
 
+            if (_ws is not null)
+                await DisconnectAsync();
+
             _ws = ws;
             GameCode = code;
 
-            ws.Dispose();
 
             return (true, code);
         }
@@ -53,6 +57,111 @@ public class GameClient
         {
             ws.Dispose();
             return (false, $"Непредвиденная ошибка: {ex.Message}");
+        }
+    }
+
+    public async Task<(bool IsSuccess, string? Error)> ConnectAsync(string gameCode)
+    {
+        if (string.IsNullOrWhiteSpace(gameCode))
+            return (false, "Код игры не может быть пустым.");
+
+        if (_ws is not null)
+            await DisconnectAsync();
+        var ws = new ClientWebSocket();
+
+        try
+        {
+            await ws.ConnectAsync(
+                new Uri($"ws://{_baseUrl}/ws/game/connect?code={Uri.EscapeDataString(gameCode.Trim())}"),
+                CancellationToken.None);
+
+            _ws = ws;
+            GameCode = gameCode.Trim().ToUpperInvariant();
+
+            return (true, null);
+        }
+        catch (WebSocketException ex)
+        {
+            ws.Dispose();
+            return (false, $"Ошибка сети/протокола: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            ws.Dispose();
+            return (false, $"Непредвиденная ошибка: {ex.Message}");
+        }
+    }
+
+    public async Task ListenAsync(CancellationToken cancellationToken = default)
+    {
+        var ws = _ws ?? throw new InvalidOperationException("WebSocket не подключён.");
+
+        var buffer = ArrayPool<byte>.Shared.Rent(4096);
+        using var message = new MemoryStream();
+
+        try
+        {
+            while (ws.State == WebSocketState.Open &&
+                   !cancellationToken.IsCancellationRequested)
+            {
+                var result = await ws.ReceiveAsync(buffer, cancellationToken);
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                    break;
+
+                if (result.MessageType != WebSocketMessageType.Text)
+                    continue;
+
+                message.Write(buffer, 0, result.Count);
+
+                if (!result.EndOfMessage)
+                    continue;
+
+                using var document = JsonDocument.Parse(message.GetBuffer().AsMemory(0, (int)message.Length));
+                var root = document.RootElement;
+
+                if (root.TryGetProperty("Type", out var type) &&
+                    type.GetString() == "playerCount" &&
+                    root.TryGetProperty("Count", out var count))
+                {
+                    PlayerCountChanged?.Invoke(count.GetInt32());
+                }
+
+                message.SetLength(0);
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (WebSocketException)
+        {
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task DisconnectAsync()
+    {
+        if (_ws is null)
+            return;
+
+        try
+        {
+            if (_ws.State == WebSocketState.Open)
+            {
+                await _ws.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    "Client disconnected",
+                    CancellationToken.None);
+            }
+        }
+        finally
+        {
+            _ws.Dispose();
+            _ws = null;
+            GameCode = null;
         }
     }
 }
