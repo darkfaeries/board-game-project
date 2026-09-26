@@ -1,11 +1,15 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<GameStore>();
-// builder.Services.AddHttpLogging(o => { });
 
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration));
+
+// builder.Services.AddHttpLogging(o => { });
 var app = builder.Build();
 
 // app.UseHttpLogging();
