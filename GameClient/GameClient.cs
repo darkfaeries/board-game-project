@@ -16,8 +16,7 @@ public class GameClient
     public bool IsConnected => _ws?.State == WebSocketState.Open;
     public event Action<int>? PlayerCountChanged;
 
-    public GameClient(string baseUrl, ILogger<GameClient> logger)
-    {
+    public GameClient(string baseUrl, ILogger<GameClient> logger) {
         _baseUrl = baseUrl;
         _logger = logger;
     }
@@ -52,22 +51,16 @@ public class GameClient
         catch (WebSocketException ex)
         {
             ws.Dispose();
-
-            _logger.LogCritical("Network/protocol error {message}", ex.Message);
             return (false, $"Ошибка сети/протокола: {ex.Message}");
         }
         catch (JsonException)
         {
             ws.Dispose();
-
-            _logger.LogCritical("Error: Failed to parse JSON from the server");
             return (false, "Ошибка: Не удалось распарсить JSON от сервера.");
         }
         catch (Exception ex)
         {
             ws.Dispose();
-
-            _logger.LogCritical("Unexpected error {message}", ex.Message);
             return (false, $"Непредвиденная ошибка: {ex.Message}");
         }
     }
