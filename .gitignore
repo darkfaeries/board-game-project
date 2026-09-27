@@ -1,2 +1,5 @@
-GameServer/bin
-GameServer/obj
+.idea/
+.vs/
+bin/
+obj/
+logs/
