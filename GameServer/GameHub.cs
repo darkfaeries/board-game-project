@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 
 namespace GameServer;
+
 class GameHub : Hub
 {
     ILogger<GameHub> _logger;
@@ -14,9 +15,17 @@ class GameHub : Hub
         _turnService = turnService;
     }
 
-    public async Task EndTurn(Guid sessionId)
+    public async Task<string> CreateSession()
     {
-        var turnResult = _turnService.EndTurn(sessionId, Context.ConnectionId);
+        var session = _store.CreateSession();
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, session.GetCode().ToString());
+        return session.GetCode();
+    }
+
+    public async Task EndTurn(string code)
+    {
+        var turnResult = _turnService.EndTurn(code, Context.ConnectionId);
 
         if (!turnResult.Result)
         {
@@ -30,30 +39,103 @@ class GameHub : Hub
             throw new HubException($"End turn failed: player can`t be null");
         }
 
-        await Clients.Group(sessionId.ToString()).SendAsync("TurnChanged", new 
+        await Clients.Group(code).SendAsync("TurnChanged", new
         {
             NextPlayerId = turnResult.NextPlayer.Id,
             NextPlayerUsername = turnResult.NextPlayer.Username
         });
     }
 
-    public async Task JoinSession(Guid sessionId, Player player)
+    public async Task<int> JoinSession(string code, string username)
     {
-        var session = _store.GetSession(sessionId.ToString());
+        var session = _store.GetSession(code);
         if (session == null)
         {
-            _logger.LogCritical($"Failed to join session: session with id {sessionId} doesn`t exist");
+            _logger.LogCritical($"Failed to join session: session with id {code} doesn`t exist");
             throw new HubException("SessionId doesn`t exist");
         }
 
-        var result = session.JoinSession(sessionId, player); // ?!
+        var player = new Player
+        {
+            Username = username,
+            ConnectionId = Context.ConnectionId
+        };
+
+        var result = session.JoinSession(player);
         if (!result)
         {
             _logger.LogCritical($"Failed to join session: player {player.Username} already exists");
             throw new HubException("Player already exists");
         }
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, sessionId.ToString());
-        await Clients.Group(sessionId.ToString()).SendAsync("PlayerJoined", player);
+        await Groups.AddToGroupAsync(Context.ConnectionId, code);
+        await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers().Count);
+
+        return session.GetPlayers().Count;
+    }
+
+    public async Task<int> LeaveSession(string code)
+    {
+        var session = _store.GetSession(code);
+        if (session == null)
+        {
+            _logger.LogCritical($"Failed to leave session: session with id {code} doesn`t exist");
+            throw new HubException("SessionId doesn`t exist");
+        }
+
+        var player = session.GetPlayers()
+                    .FirstOrDefault(p => p.Value.ConnectionId == Context.ConnectionId).Value
+                    ?? throw new HubException("Player doesn't exist");
+
+        var result = session.LeaveSession(player.Id);
+        if (!result)
+        {
+            _logger.LogCritical($"Failed to leave session: player {player.Username} doesn`t exist");
+            throw new HubException("Player doesn`t exist");
+        }
+
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, code);
+        await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers().Count);
+
+        if (session.GetPlayers().Count == 0)
+        {
+            if (!_store.RemoveSession(code))
+            {
+                _logger.LogCritical($"Failed to delete session: session {code} doesn`t exist");
+                throw new HubException("Session doesn`t exist");
+            }
+        }
+
+        return session.GetPlayers().Count;
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var connectionId = Context.ConnectionId;
+
+        foreach (var (code, session) in _store.GetSessions())
+        {
+            var player = session.GetPlayers()
+                .FirstOrDefault(p => p.Value.ConnectionId == connectionId).Value;
+
+            if (player is null) continue;
+
+            session.LeaveSession(player.Id);
+            await Groups.RemoveFromGroupAsync(connectionId, code);
+            await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers().Count);
+
+            if (session.GetPlayers().Count == 0)
+            {
+                if (!_store.RemoveSession(code))
+                {
+                    _logger.LogCritical($"Failed to delete session: session {code} doesn`t exist");
+                    throw new HubException("Session doesn`t exist");
+                }
+            }
+
+            break;
+        }
+
+        await base.OnDisconnectedAsync(exception);
     }
 }

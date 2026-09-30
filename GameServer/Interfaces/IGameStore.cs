@@ -5,6 +5,8 @@ namespace GameServer;
 public interface IGameStore
 {
     public ConcurrentDictionary<string, ISession> GetSessions();
-    ISession? GetSession(string sessionId);
-    bool AddSession(string sessionId, ISession session);
+    ISession? GetSession(string code);
+    bool AddSession(string code, ISession session);
+    bool RemoveSession(string code);
+    ISession CreateSession();
 }

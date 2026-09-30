@@ -5,7 +5,9 @@ namespace GameServer;
 public interface ISession
 {
     void NextPlayer();
-    bool JoinSession(Guid id, Player new_player);
-    public ConcurrentDictionary<Guid, Player> GetPlayers();
-    public Player GetCurrentPlayer();
+    bool JoinSession(Player new_player);
+    bool LeaveSession(Guid id);
+    ConcurrentDictionary<Guid, Player> GetPlayers();
+    Player? GetCurrentPlayer();
+    string GetCode();
 } 
