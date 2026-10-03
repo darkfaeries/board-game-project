@@ -3,93 +3,133 @@ direction UD
 
 
 class GameState {
-    +GameStatus Status
-    +TurnPhase Phase
-    +Guid? CurrentPlayerId
-    +int TurnNumber
-    +Player[] Players
-    +BoardState Board
-    +VictoryState Victory
-    +Player GetCurrentPlayer()
-    +int CalculateVictoryPoints(playerId)
++GameStatus Status
++TurnPhase Phase
++Guid? CurrentPlayerId
++int TurnNumber
++Player[] Players
++BoardState Board
++VictoryState Victory
++PendingDecision[] PendingDecisions
++Player GetCurrentPlayer()
++int CalculateVictoryPoints(playerId)
 }
 
+class PendingDecision {
+<<abstract>>
++Guid PlayerId
+}
+
+class DiscardResourcesDecision {
++int RequiredCount
+}
+
+class ChooseEnemyDecision
+
+class ChooseEnemyDestinationDecision {
++EnemyType EnemyType
+}
+
+class ChooseStealTargetDecision {
++List~Guid~ EligiblePlayerIds
+}
+
+class ChooseDesertificationHexDecision {
++TerrainType Terrain
+}
+
+class ChooseCampToRemoveDecision {
++List~Guid~ EligibleCampIds
+}
+
+class ChooseBonusTribeCounterDecision {
++List~Guid~ EligibleTribeCounterIds
+}
+
+PendingDecision <|-- DiscardResourcesDecision
+PendingDecision <|-- ChooseEnemyDecision
+PendingDecision <|-- ChooseEnemyDestinationDecision
+PendingDecision <|-- ChooseStealTargetDecision
+PendingDecision <|-- ChooseDesertificationHexDecision
+PendingDecision <|-- ChooseCampToRemoveDecision
+PendingDecision <|-- ChooseBonusTribeCounterDecision
+
 class GameStatus {
-    <<enumeration>>
-    WaitingForPlayers
-    Setup
-    Playing
-    Finished
+<<enumeration>>
+WaitingForPlayers
+Setup
+Playing
+Finished
 }
 
 class TurnPhase {
-    <<enumeration>>
-    Roll
-    Trade
-    Actions
+<<enumeration>>
+Roll
+Trade
+Actions
 }
 
 GameState ..> GameStatus
 GameState ..> TurnPhase
-
+GameState "1" *-- "0..*" PendingDecision
 
 %% =========================================================
 %% PLAYER
 %% =========================================================
 
 class Player {
-    +Guid Id
-    +string Name
-    +PlayerColor Color
-    +ResourceInventory Resources
-    +ProgressState Progress
-    +List~Camp~ Camps
-    +List~Explorer~ Explorers
-    +List~TribeCounter~ TribeCounters
-    +List~ExplorationCounter~ ExplorationCounters
++Guid Id
++string Name
++PlayerColor Color
++ResourceInventory Resources
++ProgressState Progress
++List~Camp~ Camps
++List~Explorer~ Explorers
++List~TribeCounter~ TribeCounters
++List~ExplorationCounter~ ExplorationCounters
 }
 
 class ResourceInventory {
-    +int Meat
-    +int Bone
-    +int Flint
-    +int Hides
-    +Get(ResourceType)
-    +Add(ResourceType, amount)
-    +Spend(ResourceType, amount)
-    +CountTotal()
++int Meat
++int Bone
++int Flint
++int Hides
++Get(ResourceType)
++Add(ResourceType, amount)
++Spend(ResourceType, amount)
++CountTotal()
 }
 
 class ResourceType {
-    <<enumeration>>
-    Meat
-    Bone
-    Flint
-    Hides
+<<enumeration>>
+Meat
+Bone
+Flint
+Hides
 }
 
 class ProgressState {
-    +int Food
-    +int Hunting
-    +int Shelter
-    +int Clothing
-    +GetLevel(ProgressType)
++int Food
++int Hunting
++int Shelter
++int Clothing
++GetLevel(ProgressType)
 }
 
 class ProgressType {
-    <<enumeration>>
-    Food
-    Hunting
-    Shelter
-    Clothing
+<<enumeration>>
+Food
+Hunting
+Shelter
+Clothing
 }
 
 class PlayerColor {
-    <<enumeration>>
-    Red
-    Blue
-    White
-    Orange
+<<enumeration>>
+Red
+Blue
+White
+Orange
 }
 
 GameState "1" *-- "2..4" Player
@@ -105,71 +145,71 @@ Player ..> PlayerColor
 %% =========================================================
 
 class BoardState {
-    +Dictionary~Guid, Hex~ Hexes
-    +Dictionary~Guid, Intersection~ Intersections
-    +Dictionary~Guid, Path~ Paths
-    +Dictionary~Guid, OccupantRef~ OccupantsByIntersection
-    +Dictionary~EnemyType, Enemy~ Enemies
-    +List~Path~ GetAdjacentPaths(Guid intersectionId)
-    +bool IsOccupied(Guid intersectionId)
++Dictionary~Guid, Hex~ Hexes
++Dictionary~Guid, Intersection~ Intersections
++Dictionary~Guid, Path~ Paths
++Dictionary~Guid, OccupantRef~ OccupantsByIntersection
++Dictionary~EnemyType, Enemy~ Enemies
++List~Path~ GetAdjacentPaths(Guid intersectionId)
++bool IsOccupied(Guid intersectionId)
 }
 
 class OccupantRef {
-    +Guid PlayerId
-    +Guid PieceId
-    +PieceType Type
++Guid PlayerId
++Guid PieceId
++PieceType Type
 }
 
 class PieceType {
-    <<enumeration>>
-    Camp
-    Explorer
+<<enumeration>>
+Camp
+Explorer
 }
 
 class Hex {
-    +Guid Id
-    +TerrainType Terrain
-    +int NumberToken
-    +Region Region
-    +bool IsDesertified
-    +List~Guid~ IntersectionIds
-    +ResourceType GetProducedResource()
++Guid Id
++TerrainType Terrain
++int NumberToken
++Region Region
++bool IsDesertified
++List~Guid~ IntersectionIds
++ResourceType GetProducedResource()
 }
 
 class TerrainType {
-    <<enumeration>>
-    Hills
-    Plains
-    Mountains
-    Forest
+<<enumeration>>
+Hills
+Plains
+Mountains
+Forest
 }
 
 class Region {
-    <<enumeration>>
-    Africa
-    Eurasia
-    Australia
-    America
+<<enumeration>>
+Africa
+Eurasia
+Australia
+America
 }
 
 class Intersection {
-    +Guid Id
-    +Region Region
-    +TribeCounter TribeCounter
++Guid Id
++Region Region
++TribeCounter TribeCounter
 }
 
 class Path {
-    +Guid Id
-    +Guid FromIntersectionId
-    +Guid ToIntersectionId
-    +RequirementBox Requirement
-    +ExplorationCounter ExplorationCounter
++Guid Id
++Guid FromIntersectionId
++Guid ToIntersectionId
++RequirementBox Requirement
++ExplorationCounter ExplorationCounter
 }
 
 class RequirementBox {
-    +int ClothingRequired
-    +int ShelterRequired
-    +bool CanPass(Player player)
++int ClothingRequired
++int ShelterRequired
++bool CanPass(Player player)
 }
 
 BoardState "1" *-- "*" Hex
@@ -195,11 +235,11 @@ Path --> "0..1" ExplorationCounter
 %% =========================================================
 
 class Camp {
-    +Guid Id
++Guid Id
 }
 
 class Explorer {
-    +Guid Id
++Guid Id
 }
 
 Player "1" *-- "0..5" Camp
@@ -211,16 +251,16 @@ Player "1" *-- "0..2" Explorer
 %% =========================================================
 
 class TribeCounter {
-    +Guid Id
-    +TribeType Type;
++Guid Id
++TribeType Type;
 }
 
 class TribeType {
-    <<enumeration>>
-    Type1
-    Type2
-    Type3
-    Type4
+<<enumeration>>
+Type1
+Type2
+Type3
+Type4
 }
 TribeCounter ..> TribeType
 Intersection --> "0..1" TribeCounter
@@ -232,20 +272,20 @@ Player "1" o-- "*" TribeCounter
 %% =========================================================
 
 class ExplorationCounter {
-    <<abstract>>
-    +Guid Id
+<<abstract>>
++Guid Id
 }
 
 class EnemyExplorationCounter {
-    +EnemyType EnemyType
++EnemyType EnemyType
 }
 
 class DesertificationCounter {
-    +TerrainType Terrain
++TerrainType Terrain
 }
 
 class AdaptationCounter {
-    +AdaptationColor Color
++AdaptationColor Color
 }
 
 ExplorationCounter <|-- EnemyExplorationCounter
@@ -255,11 +295,11 @@ ExplorationCounter <|-- AdaptationCounter
 Player "1" o-- "*" ExplorationCounter : collected
 
 class AdaptationColor {
-    <<enumeration>>
-    White
-    Yellow
-    Red
-    Brown
+<<enumeration>>
+White
+Yellow
+Red
+Brown
 }
 
 AdaptationCounter ..> AdaptationColor
@@ -270,13 +310,13 @@ AdaptationCounter ..> AdaptationColor
 %% =========================================================
 
 class Enemy {
-    +Guid HexId
++Guid HexId
 }
 
 class EnemyType {
-    <<enumeration>>
-    Neanderthal
-    SabertoothTiger
+<<enumeration>>
+Neanderthal
+SabertoothTiger
 }
 
 BoardState "1" *-- "2" Enemy
@@ -289,9 +329,9 @@ Enemy --> Hex : id
 %% =========================================================
 
 class VictoryState {
-    +Guid? ExplorationCardOwnerId
-    +Guid? ExpansionCardOwnerId
-    +Dictionary~ProgressType, Guid~ ArtCardOwners
++Guid? ExplorationCardOwnerId
++Guid? ExpansionCardOwnerId
++Dictionary~ProgressType, Guid~ ArtCardOwners
 }
 
 GameState "1" *-- "1" VictoryState
