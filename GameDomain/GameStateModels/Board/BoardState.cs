@@ -6,19 +6,22 @@ using System.Linq;
 
 public class BoardState
 {
-    public Dictionary<Guid, Hex> Hexes { get; } = new Dictionary<Guid, Hex>();
-    public Dictionary<Guid, Node> Intersections { get; } = new Dictionary<Guid, Node>();
-    public Dictionary<Guid, Path> Paths { get; } = new Dictionary<Guid, Path>();
-    
-    // won't be used to not double the info
-    // public Dictionary<Guid, OccupantRef> OccupantsByIntersection { get; set; } = new Dictionary<Guid, OccupantRef>();
+    public Dictionary<AxialCoords, Hex> Hexes { get; } = new Dictionary<AxialCoords, Hex>();
+    public Dictionary<AxialCoords, Node> Nodes { get; } = new Dictionary<AxialCoords, Node>();
+    public Dictionary<Path, ExplorationPath> ExplorationPaths { get; } = new Dictionary<Path, ExplorationPath>();
+    public HashSet<Path> BlockedPaths { get; } = new HashSet<Path>();
 
-    // int is the hex id of neanderthal/tiger; we're getting rid of the Enemy class
-    public int NeanderthalPosition { get; set; } = -1;
-    public int SabertoothTigerPosition { get; set; } = -1;
+    public AxialCoords? NeanderthalPosition { get; set; } = null;
+    public AxialCoords? SabertoothTigerPosition { get; set; } = null;
+
+    // read board from csv file readers
+    public BoardState(StreamReader hex_rd, StreamReader node_rd, StreamReader path_rd)
+    {
+        // TODO
+    }
 
     // should be an arithmetic function
-    public List<Path> GetAdjacentPaths(Guid intersectionId)
+    public List<Path> GetAdjacentPaths(AxialCoords nodeCoords)
     {
         // TODO today
         throw new NotImplementedException();
