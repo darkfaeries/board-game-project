@@ -28,3 +28,4 @@ public class BoardState
     {
         throw new NotImplementedException();
     }
+}
