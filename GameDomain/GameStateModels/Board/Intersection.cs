@@ -6,7 +6,7 @@ using System.Linq;
 
 public class Intersection
 {
-    public Guid Id { get; set; }
-    public Region Region { get; set; }
+    public Guid Id { get; }
+    public Region Region { get; }
     public TribeCounter? TribeCounter { get; set; }
 }

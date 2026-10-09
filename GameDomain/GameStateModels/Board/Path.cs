@@ -6,9 +6,7 @@ using System.Linq;
 
 public class Path
 {
-    public Guid Id { get; set; }
-    public Guid FromIntersectionId { get; set; }
-    public Guid ToIntersectionId { get; set; }
-    public RequirementBox? Requirement { get; set; }
+    public Guid Id { get; }
+    public RequirementBox? Requirement { get; }
     public ExplorationCounter? ExplorationCounter { get; set; }
 }

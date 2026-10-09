@@ -6,9 +6,9 @@ using System.Linq;
 
 public class Player
 {
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public PlayerColor Color { get; set; }
+    public Guid Id { get; }
+    public string Name { get; } = string.Empty;
+    public PlayerColor Color { get; }
     public ResourceInventory Resources { get; set; } = new ResourceInventory();
     public ProgressState Progress { get; set; } = new ProgressState();
     public List<int> CampPositions { get; set; } = new List<Camp>();
