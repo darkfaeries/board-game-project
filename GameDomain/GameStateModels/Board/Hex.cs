@@ -6,14 +6,14 @@ using System.Linq;
 
 public class Hex
 {
-    public Guid Id { get; set; }
-    public TerrainType Terrain { get; set; }
-    public int NumberToken { get; set; }
-    public Region Region { get; set; }
+    public Guid Id { get; }
+    public TerrainType Terrain { get; }
+    public int NumberToken { get; }
+    public Region Region { get; }
     public bool IsDesertified { get; set;}
 
     public ResourceType GetProducedResource()
     {
-        throw new NotImplementedException();
+        return (Resource)TerrainType;
     }
 }
