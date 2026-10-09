@@ -21,6 +21,8 @@ public class Path
 
     public Path(AxialCoords from_in, AxialCoords to_in)
     {
+        if (from_in.IsHex()) throw new Exception("hex coords used for path constructor");
+        if (to_in.IsHex()) throw new Exception("hex coords used for path constructor");
         from = from_in;
         to = to_in;
     }

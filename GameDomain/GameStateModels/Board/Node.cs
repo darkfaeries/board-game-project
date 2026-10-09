@@ -15,6 +15,7 @@ public class Node
 
     public Node(AxialCoords coords, Tribe tribe, bool start, bool settle, bool settle_3player)
     {
+        if (coords.IsHex()) throw new Exception("hex coords used for node constructor");
         Coords = coords;
         Tribe = tribe;
         IsStartSpace = start;

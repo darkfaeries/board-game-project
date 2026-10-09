@@ -14,6 +14,7 @@ public class Hex
 
     public Hex(AxialCoords coords, TerrainType terrain, int number, Region region)
     {
+        if (coords.IsNode()) throw new Exception("node coords used for hex constructor");
         Coords = coords;
         Terrain = terrain;
         NumberToken = number;
