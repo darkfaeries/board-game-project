@@ -6,8 +6,8 @@ using System.Linq;
 
 public enum TerrainType
 {
-    Hills,
-    Plains,
-    Mountains,
-    Forest
+    Hills = 0,
+    Plains = 1,
+    Mountains = 2,
+    Forest = 3
 }
