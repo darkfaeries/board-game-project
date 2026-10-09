@@ -6,5 +6,5 @@ using System.Linq;
 
 public class ChooseEnemyDestinationDecision : PendingDecision
 {
-    public EnemyType EnemyType { get; set; }
+
 }

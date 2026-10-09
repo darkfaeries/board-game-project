@@ -24,6 +24,6 @@ public class Hex
 
     public ResourceType GetProducedResource()
     {
-        return (Resource)TerrainType;
+        return (ResourceType)Terrain;
     }
 }

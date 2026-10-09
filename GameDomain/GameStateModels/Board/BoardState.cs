@@ -16,21 +16,21 @@ public class BoardState
 
     private static Dictionary<string, TerrainType> terrain_names = new Dictionary<string, TerrainType>
     {
-        ["hills"] : TerrainType.Hills,
-        ["plains"] : TerrainType.Plains,
-        ["mountain"] : TerrainType.Mountain,
-        ["forest"] : TerrainType.Forest
+        ["hills"] = TerrainType.Hills,
+        ["plains"] = TerrainType.Plains,
+        ["mountain"] = TerrainType.Mountains,
+        ["forest"] = TerrainType.Forest
     };
 
     private static Dictionary<string, Region> region_names = new Dictionary<string, Region>
     {
-        ["africa"] : Region.Africa,
-        ["eurasia"] : Region.Eurasia,
-        ["australia"] : Region.Australia,
-        ["america"] : Region.America
+        ["africa"] = Region.Africa,
+        ["eurasia"] = Region.Eurasia,
+        ["australia"] = Region.Australia,
+        ["america"] = Region.America
     };
 
-    private Dictionary<AxialCoords, Hex> ReadHexesCsv(StreamReader hex_rd)
+    private Dictionary<AxialCoords, Hex> ReadHexesCsv(StreamReader hexes_rd)
     {
         var colNames = hexes_rd.ReadLine().Split(',');
 
@@ -51,9 +51,9 @@ public class BoardState
             int q = int.Parse(fields[dict["q"]].Trim());
             int r = int.Parse(fields[dict["r"]].Trim());
             AxialCoords coords = new AxialCoords(q, r);
-            Region region = region_names[fields[dict["region"]],Trim()];
+            Region region = region_names[fields[dict["region"]].Trim()];
             int number = int.Parse(fields[dict["number"]].Trim());
-            TerrainType terrain = region_names[fields[dict["terrain"]].Trim()];
+            TerrainType terrain = terrain_names[fields[dict["terrain"]].Trim()];
 
             hexes.Add(coords, new Hex(coords, terrain, number, region)); 
         }
@@ -63,10 +63,10 @@ public class BoardState
 
     private static Dictionary<string, Tribe> tribe_names = new Dictionary<string, Tribe>
     {
-        ["Indo-Europeans"] : Tribe.Indo_Europeans,
-        ["Asians"] : Tribe.Asians,
-        ["Austronesians"] : Tribe.Austronesians,
-        ["Americans"] : Tribe.Americans
+        ["Indo-Europeans"] = Tribe.Indo_Europeans,
+        ["Asians"] = Tribe.Asians,
+        ["Austronesians"] = Tribe.Austronesians,
+        ["Americans"] = Tribe.Americans
     };
 
     private Dictionary<AxialCoords, Node> ReadNodesCsv(StreamReader node_rd)
@@ -90,7 +90,7 @@ public class BoardState
             int q = int.Parse(fields[dict["q"]].Trim());
             int r = int.Parse(fields[dict["r"]].Trim());
             AxialCoords coords = new AxialCoords(q, r);
-            Tribe tribe = tribe_names[fields[dict["tribe"]],Trim()];
+            Tribe tribe = tribe_names[fields[dict["tribe"]].Trim()];
 
             bool start = bool.Parse(fields[dict["start"]].Trim());
             bool settle = bool.Parse(fields[dict["settle"]].Trim());
@@ -102,7 +102,7 @@ public class BoardState
         return nodes;
     }
 
-    private Pair<Dictionary<Path, ExplorationPath>, HashSet<Path>> ReadPathsCsv(StreamReader path_rd)
+    private (Dictionary<Path, ExplorationPath>, HashSet<Path>) ReadPathsCsv(StreamReader path_rd)
     {
         var colNames = path_rd.ReadLine().Split(',');
 
@@ -113,8 +113,8 @@ public class BoardState
             dict[colNames[i].Trim()] = i;
         }
 
-        var exploration_paths = new Dictionary<Path, ExplorationPath>();
-        var blocked_paths = new HashSet<Path>();
+        Dictionary<Path, ExplorationPath> exploration_paths = new Dictionary<Path, ExplorationPath>();
+        HashSet<Path> blocked_paths = new HashSet<Path>();
 
         while (!path_rd.EndOfStream)
         {
@@ -136,7 +136,7 @@ public class BoardState
                 continue;
             }
 
-            Tribe tribe = tribe_names[fields[dict["race"]],Trim()];
+            Tribe tribe = tribe_names[fields[dict["race"]].Trim()];
             int clothing = int.Parse(fields[dict["clothing"]].Trim());
             int shelter = int.Parse(fields[dict["shelter"]].Trim());
 
