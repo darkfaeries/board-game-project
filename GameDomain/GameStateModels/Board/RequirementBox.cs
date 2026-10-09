@@ -6,9 +6,11 @@ using System.Linq;
 
 public class RequirementBox
 {
-    public int ClothingRequired { get; set; }
-    public int ShelterRequired { get; set; }
+    // these are non-modifiable
+    public int ClothingRequired { get; }
+    public int ShelterRequired { get; }
 
+    // не уверен, что это должно быть здесь; пока оставим
     public bool CanPass(Player player)
     {
         if (player == null)
