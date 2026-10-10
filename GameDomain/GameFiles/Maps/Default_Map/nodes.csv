@@ -136,8 +136,8 @@ q,r,s,desc,start,settle,settle_3player,tribe
 8,-3,-5,W of hills 3,FALSE,TRUE,TRUE,Americans
 10,-4,-6,NE of hills 3,FALSE,TRUE,FALSE,Americans
 9,-4,-5,NW of hills 3,FALSE,FALSE,FALSE,
-11,-5,-6,E of forest 10,FALSE,TRUE,TRUE,Americans
-9,-5,-4,W of forest 10,FALSE,FALSE,FALSE,
+11,-5,-6,E of forest 10,FALSE,FALSE,FALSE
+9,-5,-4,W of forest 10,FALSE,TRUE,TRUE,Americans
 11,-6,-5,NE of forest 10,FALSE,FALSE,FALSE,
 10,-6,-4,NW of forest 10,FALSE,FALSE,FALSE,
 12,-4,-8,E of plains 11,FALSE,FALSE,FALSE,
