@@ -90,7 +90,7 @@ q,r,s,desc,start,settle,settle_3player,tribe
 2,1,-3,path to Australia,FALSE,FALSE,FALSE,
 -8,-1,9,NE of plains 10,FALSE,FALSE,FALSE,
 -9,-1,10,NW of plains 10,TRUE,FALSE,FALSE,
-1,3,-4,E of plains 8,FALSE,TRUE,TRUE,
+1,3,-4,E of plains 8,FALSE,TRUE,TRUE,Austronesians
 -1,3,-2,W of plains 8,FALSE,FALSE,FALSE,
 -1,4,-3,SW of plains 8,FALSE,TRUE,TRUE,Austronesians
 1,2,-3,NE of plains 8,FALSE,FALSE,FALSE,

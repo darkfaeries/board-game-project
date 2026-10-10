@@ -7,13 +7,13 @@ using System.Linq;
 public class Node
 {
     public AxialCoords Coords { get; }
-    public Tribe Tribe { get; }
+    public Tribe? Tribe { get; }
     public bool IsStartSpace { get; }
     public bool CanSettle { get; }
     public bool CanSettle3p { get; }
     public bool HasTribeCounter { get; set; }
 
-    public Node(AxialCoords coords, Tribe tribe, bool start, bool settle, bool settle_3player)
+    public Node(AxialCoords coords, Tribe? tribe, bool start, bool settle, bool settle_3player)
     {
         if (coords.IsHex()) throw new Exception("hex coords used for node constructor");
         Coords = coords;

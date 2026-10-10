@@ -18,7 +18,7 @@ public class BoardState
     {
         ["hills"] = TerrainType.Hills,
         ["plains"] = TerrainType.Plains,
-        ["mountain"] = TerrainType.Mountains,
+        ["mountains"] = TerrainType.Mountains,
         ["forest"] = TerrainType.Forest
     };
 
@@ -90,11 +90,16 @@ public class BoardState
             int q = int.Parse(fields[dict["q"]].Trim());
             int r = int.Parse(fields[dict["r"]].Trim());
             AxialCoords coords = new AxialCoords(q, r);
-            Tribe tribe = tribe_names[fields[dict["tribe"]].Trim()];
 
             bool start = bool.Parse(fields[dict["start"]].Trim());
             bool settle = bool.Parse(fields[dict["settle"]].Trim());
             bool settle_3player = bool.Parse(fields[dict["settle_3player"]].Trim());
+
+            Tribe? tribe = null;
+            if (settle)
+            {
+                tribe = tribe_names[fields[dict["tribe"]].Trim()];
+            }
 
             nodes.Add(coords, new Node(coords, tribe, start, settle, settle_3player)); 
         }
