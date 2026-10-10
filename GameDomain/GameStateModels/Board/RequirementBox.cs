@@ -16,7 +16,7 @@ public class RequirementBox
         if (player == null)
             throw new ArgumentNullException(nameof(player));
 
-        return player.Progress.Clothing >= ClothingRequired
-            && player.Progress.Shelter >= ShelterRequired;
+        return player.Progress.Progress.ContainsKey(ProgressType.Clothing) && player.Progress.Progress[ProgressType.Clothing] >= ClothingRequired
+            && player.Progress.Progress.ContainsKey(ProgressType.Shelter) && player.Progress.Progress[ProgressType.Shelter] >= ShelterRequired;
     }
 }

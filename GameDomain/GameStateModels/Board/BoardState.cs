@@ -24,6 +24,11 @@ public class BoardState
         throw new NotImplementedException();
     }
 
+    public List<Node> GetAdjacentIntersections(Guid intersectionId)
+    {
+        // TODO today
+        throw new NotImplementedException();
+    }
     public bool IsOccupied(Guid nodeId)
     {
         throw new NotImplementedException();

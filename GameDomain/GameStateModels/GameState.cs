@@ -10,7 +10,7 @@ public class GameState
     public TurnPhase Phase { get; set; }
     public Guid? CurrentPlayerId { get; set; }
     public int TurnNumber { get; set; }
-    public Player[] Players { get; set; } = Array.Empty<Player>();
+    public List<Player> Players { get; set; } = new();
     public BoardState Board { get; set; } = new BoardState();
     public VictoryState Victory { get; set; } = new VictoryState();
     public PendingDecision[] PendingDecisions { get; set; } = Array.Empty<PendingDecision>();

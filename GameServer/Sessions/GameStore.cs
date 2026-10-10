@@ -3,11 +3,12 @@ using System.Collections.Concurrent;
 namespace GameServer;
 
 
-public class GameStore(ILogger<GameStore> logger, Func<ISession> sessionFactory) : IGameStore
-{
-    public ConcurrentDictionary<string, ISession> Sessions { get; private set; } = new();
 
-    public ISession? GetSession(string code)
+public class GameStore(ILogger<GameStore> logger, ILogger<GameSession> sessionLogger) : IGameStore
+{
+    public ConcurrentDictionary<string, GameSession> Sessions { get; private set; } = new();
+
+    public GameSession? GetSession(string code)
     {
         if (Sessions.TryGetValue(code, out var session))
             return session;
@@ -16,9 +17,9 @@ public class GameStore(ILogger<GameStore> logger, Func<ISession> sessionFactory)
         return null;
     }
 
-    public ConcurrentDictionary<string, ISession> GetSessions() => Sessions;
+    public ConcurrentDictionary<string, GameSession> GetSessions() => Sessions;
 
-    public bool AddSession(string code, ISession new_session)
+    public bool AddSession(string code, GameSession new_session)
     {
         if (!Sessions.TryAdd(code, new_session))
         {
@@ -38,10 +39,10 @@ public class GameStore(ILogger<GameStore> logger, Func<ISession> sessionFactory)
         return true;
     }
 
-    public ISession CreateSession()
+    public GameSession CreateSession()
     {
-        var session = sessionFactory();
-        Sessions.TryAdd(session.GetCode(), session);
+        var session = new GameSession(sessionLogger, new GameState());
+        Sessions.TryAdd(session.Code, session);
         return session;
     }
 }

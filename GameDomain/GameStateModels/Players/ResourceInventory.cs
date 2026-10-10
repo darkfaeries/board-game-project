@@ -6,7 +6,7 @@ using System.Linq;
 
 public class ResourceInventory
 {
-    public Dictionary<ResourceType, int> Resources { get; set; }
+    public Dictionary<ResourceType, int> Resources { get; set; } = new();
 
     public int Get(ResourceType resourceType)
     {
@@ -15,16 +15,42 @@ public class ResourceInventory
 
     public void Add(ResourceType resourceType, int amount)
     {
-        // TODO write
+        if (Resources.ContainsKey(resourceType))
+        {
+            Resources[resourceType] += amount;
+        }
+        else
+        {
+            Resources[resourceType] = amount;
+        }
     }
 
-    public void Spend(ResourceType resourceType, int amount)
+    public bool Spend(ResourceType resourceType, int amount)
     {
-        // TODO write
+        if (!Resources.ContainsKey(resourceType) || Resources[resourceType] < amount)
+        {
+            return false;
+        }
+
+        Resources[resourceType] -= amount;
+        return true;
     }
 
-    public int CountTotal() 
+    public bool CanAfford(IReadOnlyDictionary<ResourceType, int> cost)
     {
-        // TODO write
+        foreach (var (resource, requiredAmount) in cost)
+        {
+            if (Get(resource) < requiredAmount)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public int CountTotal()
+    {
+        return Resources.Values.Sum();
     }
 }

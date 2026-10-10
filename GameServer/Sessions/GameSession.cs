@@ -1,50 +1,37 @@
 using System.Collections.Concurrent;
+//using GameDomain;
 
 namespace GameServer;
 
-public class GameSession(ILogger<GameSession> logger) : ISession
+public class GameSession(ILogger<GameSession> logger, GameState gameState) : Session
 {
     public string Code { get; } = Guid.NewGuid().ToString("N")[..6].ToUpper();
-    public ConcurrentDictionary<Guid, Player> Players { get; } = new();
-    public int CurrentPlayerIndex { get; private set; } = 0;
-    private readonly List<Guid> _turnOrder = new();
-    public Player? CurrentPlayer
-    {
-        get
-        {
-            if (_turnOrder.Count == 0) return null;
-
-            var currentGuid = _turnOrder[CurrentPlayerIndex % _turnOrder.Count];
-            return Players.TryGetValue(currentGuid, out var player) ? player : null;
-        }
-    }
 
     public bool JoinSession(Player new_player)
     {
-        if (Players.Values.Any(p => p.Username.Equals(new_player.Username, StringComparison.OrdinalIgnoreCase)))
+        if (gameState.Players.Any(p => p.Name.Equals(new_player.Name, StringComparison.OrdinalIgnoreCase)))
         {
             logger.LogWarning(
-                $"Failed to add new player to session {Code}: player {new_player.Username} with username {new_player.Username} already exists"
+                $"Failed to add new player to session {Code}: player {new_player.Name} with username {new_player.Name} already exists"
                 );
             return false;
         }
         
-        if (!Players.TryAdd(new_player.Id, new_player))
+        if (gameState.Players.Any(p => p.Id == new_player.Id))
         {
             logger.LogWarning(
-                $"Failed to add new player to session {Code}: player {new_player.Username} with id {new_player.Id} already exists"
+                $"Failed to add new player to session {Code}: player {new_player.Name} with id {new_player.Id} already exists"
                 );
             return false;
         }
 
-        _turnOrder.Add(new_player.Id);
+        gameState.Players.Add(new_player);
         return true;
     }
 
     public bool LeaveSession(Guid id)
     {
-        var idx = _turnOrder.IndexOf(id);
-        if (idx < 0 || !Players.TryRemove(id, out var _))
+        if (!gameState.Players.Any(p => p.Id == id))
         {
             logger.LogWarning(
                 $"Failed to remove player from session {Code}: player with id {id} doesn`t exists"
@@ -52,31 +39,48 @@ public class GameSession(ILogger<GameSession> logger) : ISession
             return false;
         }
 
-        _turnOrder.Remove(id);
+        gameState.Players.RemoveAll(p => p.Id == id);
 
-        if (_turnOrder.Count == 0)
+        if (gameState.Players.Count == 0)
         {
-            CurrentPlayerIndex = 0;
+            gameState.CurrentPlayerId = null;
             return true;
         }
-
-        if (idx < CurrentPlayerIndex)
-            CurrentPlayerIndex--;
-
-        else if (CurrentPlayerIndex >= _turnOrder.Count)
-            CurrentPlayerIndex = 0;
 
         return true;
     }
 
     public void NextPlayer()
     {
-        if (Players.Count == 0) return;
-        CurrentPlayerIndex = (CurrentPlayerIndex + 1) % _turnOrder.Count;
+        if (gameState.Players.Count == 0) return;
+        var index = gameState.Players.FindIndex(p => p.Id == gameState.CurrentPlayerId);
+        gameState.CurrentPlayerId = gameState.Players[(index + 1) % gameState.Players.Count].Id;
     }
 
-    public ConcurrentDictionary<Guid, Player> GetPlayers() => Players;
-    public Player? GetCurrentPlayer() => CurrentPlayer;
-    public string GetCode() => Code;
+    public void NextPhase()
+    {
+        gameState.Phase = gameState.Phase switch
+        {
+            TurnPhase.Roll => TurnPhase.Trade,
+            TurnPhase.Trade => TurnPhase.Actions,
+            TurnPhase.Actions => TurnPhase.Roll,
+            _ => throw new InvalidOperationException($"Invalid game phase: {gameState.Phase}")
+        };
+    }
 
+    public int RollDice()
+    {
+        if (gameState.Phase != TurnPhase.Roll)
+        {
+            logger.LogWarning($"Cannot roll dice in phase {gameState.Phase}");
+            return -1;
+        }
+
+        var diceRoll = new Random().Next(1, 6) + new Random().Next(1, 6);
+        logger.LogInformation($"Player {gameState.CurrentPlayerId} rolled a {diceRoll}");
+        return diceRoll;
+    }
+
+    public Player[] GetPlayers() => gameState.Players.ToArray();
+    public GameState GetGameState() => gameState;
 }
