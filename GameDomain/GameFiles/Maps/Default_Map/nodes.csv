@@ -1,0 +1,171 @@
+q,r,s,desc,start,settle,settle_3player,tribe
+1,0,-1,E of plains 9,FALSE,FALSE,FALSE,
+-1,0,1,W of plains 9,FALSE,FALSE,FALSE,
+-1,1,0,SW of plains 9,FALSE,FALSE,FALSE,
+1,-1,0,NE of plains 9,FALSE,FALSE,FALSE,
+0,-1,1,NW of plains 9,FALSE,TRUE,TRUE,Indo-Europeans
+0,1,-1,SE of plains 9,FALSE,FALSE,FALSE,
+2,-2,0,E of forest 5,FALSE,TRUE,FALSE,Asians
+0,-2,2,W of forest 5,FALSE,FALSE,FALSE,
+2,-3,1,NE of forest 5,FALSE,FALSE,FALSE,
+1,-3,2,NW of forest 5,FALSE,TRUE,TRUE,Asians
+3,-4,1,E of mountains 4,FALSE,TRUE,TRUE,Asians
+1,-4,3,W of mountains 4,FALSE,FALSE,FALSE,
+3,-5,2,NE of mountains 4,FALSE,FALSE,FALSE,
+2,-5,3,NW of mountains 4,FALSE,TRUE,TRUE,Asians
+4,-6,2,E of hills 9,FALSE,TRUE,TRUE,Asians
+2,-6,4,W of hills 9,FALSE,FALSE,FALSE,
+4,-7,3,NE of hills 9,FALSE,FALSE,FALSE,
+3,-7,4,NW of hills 9,FALSE,FALSE,FALSE,
+-2,-1,3,W of hills 11,FALSE,FALSE,FALSE,
+-2,0,2,SW of hills 11,FALSE,FALSE,FALSE,
+-1,-2,3,NW of hills 11,FALSE,TRUE,FALSE,Indo-Europeans
+-1,-3,4,W of mountains 8,FALSE,FALSE,FALSE,
+0,-4,4,NW of mountains 8,FALSE,TRUE,TRUE,Indo-Europeans
+0,-5,5,W of plains 10,FALSE,FALSE,FALSE,
+1,-6,5,NW of plains 10,FALSE,TRUE,TRUE,Asians
+1,-7,6,W of hills 11,FALSE,FALSE,FALSE,
+3,-8,5,NE of hills 11,FALSE,FALSE,FALSE,
+2,-8,6,NW of hills 11,FALSE,FALSE,FALSE,
+-3,-2,5,W of plains 4,FALSE,FALSE,FALSE,
+-3,-1,4,SW of plains 4,FALSE,TRUE,FALSE,Indo-Europeans
+-2,-3,5,NW of plains 4,FALSE,TRUE,TRUE,Indo-Europeans
+-2,-4,6,W of hills 5,FALSE,FALSE,FALSE,
+-1,-5,6,NW of hills 5,FALSE,TRUE,FALSE,Indo-Europeans
+-1,-6,7,W of forest 3,FALSE,FALSE,FALSE,
+0,-7,7,NW of forest 3,FALSE,FALSE,FALSE,
+-4,-3,7,W of forest 11,FALSE,FALSE,FALSE,
+-4,-2,6,SW of forest 11,FALSE,FALSE,FALSE,
+-3,-4,7,NW of forest 11,FALSE,TRUE,TRUE,Indo-Europeans
+-3,-5,8,W of hills 6,FALSE,FALSE,FALSE,
+-2,-6,8,NW of hills 6,FALSE,FALSE,FALSE,
+-5,-4,9,W of forest 10,FALSE,FALSE,FALSE,
+-5,-3,8,SW of forest 10,FALSE,TRUE,TRUE,Indo-Europeans
+-4,-5,9,NW of forest 10,FALSE,FALSE,FALSE,
+-7,-3,10,W of plains 5,FALSE,FALSE,FALSE,
+-4,-6,10,no hex,FALSE,FALSE,FALSE,
+-6,-4,10,NW of plains 5,FALSE,FALSE,FALSE,
+-2,-7,9,no hex,FALSE,FALSE,FALSE,
+4,-3,-1,E of forest 12,FALSE,TRUE,FALSE,Asians
+4,-4,0,NE of forest 12,FALSE,FALSE,FALSE,
+3,-2,-1,SE of forest 12,FALSE,FALSE,FALSE,
+5,-5,0,E of forest 6,FALSE,TRUE,FALSE,Asians
+5,-6,1,NE of forest 6,FALSE,FALSE,FALSE,
+6,-7,1,E of hills 12,FALSE,FALSE,FALSE,
+5,-8,3,NW of hills 12,FALSE,FALSE,FALSE,
+-5,-1,6,W of plains 2,FALSE,FALSE,FALSE,
+-5,0,5,SW of plains 2,TRUE,FALSE,FALSE,
+-4,0,4,SE of plains 2,FALSE,FALSE,FALSE,
+-4,1,3,E of mountains 5,TRUE,FALSE,FALSE,
+-6,1,5,W of mountains 5,FALSE,FALSE,FALSE,
+-6,2,4,SW of mountains 5,TRUE,FALSE,FALSE,
+-5,2,3,SE of mountains 5,FALSE,FALSE,FALSE,
+-5,3,2,E of forest 9,TRUE,FALSE,FALSE,
+-7,3,4,W of forest 9,FALSE,FALSE,FALSE,
+-7,4,3,SW of forest 9,TRUE,FALSE,FALSE,
+-6,4,2,SE of forest 9,FALSE,FALSE,FALSE,
+-3,2,1,E of hills 8,TRUE,FALSE,FALSE,
+-3,1,2,NE of hills 8,FALSE,FALSE,FALSE,
+-4,3,1,SE of hills 8,FALSE,FALSE,FALSE,
+-6,5,1,E of hills 12,TRUE,FALSE,FALSE,
+-8,5,3,W of hills 12,FALSE,FALSE,FALSE,
+-8,6,2,SW of hills 12,TRUE,FALSE,FALSE,
+-7,6,1,SE of hills 12,FALSE,FALSE,FALSE,
+-10,6,4,W of forest 11,FALSE,FALSE,FALSE,
+-10,7,3,SW of forest 11,TRUE,FALSE,FALSE,
+-9,5,4,NW of forest 11,TRUE,FALSE,FALSE,
+-9,4,5,W of mountains 6,FALSE,FALSE,FALSE,
+-8,3,5,NW of mountains 6,TRUE,FALSE,FALSE,
+-8,2,6,W of hills 4,FALSE,FALSE,FALSE,
+-7,1,6,NW of hills 4,TRUE,FALSE,FALSE,
+-7,0,7,W of plains 6,FALSE,FALSE,FALSE,
+-6,-1,7,NW of plains 6,TRUE,FALSE,FALSE,
+-9,1,8,W of hills 5,FALSE,FALSE,FALSE,
+-9,2,7,SW of hills 5,TRUE,FALSE,FALSE,
+-8,0,8,NW of hills 5,TRUE,FALSE,FALSE,
+2,0,-2,path to Australia,FALSE,FALSE,FALSE,
+-11,3,8,SW of forest 8,TRUE,FALSE,FALSE,
+-10,1,9,NW of forest 8,TRUE,FALSE,FALSE,
+-10,3,7,SE of forest 8,FALSE,FALSE,FALSE,
+2,1,-3,path to Australia,FALSE,FALSE,FALSE,
+-8,-1,9,NE of plains 10,FALSE,FALSE,FALSE,
+-9,-1,10,NW of plains 10,TRUE,FALSE,FALSE,
+1,3,-4,E of plains 8,FALSE,TRUE,TRUE,Austronesians
+-1,3,-2,W of plains 8,FALSE,FALSE,FALSE,
+-1,4,-3,SW of plains 8,FALSE,TRUE,TRUE,Austronesians
+1,2,-3,NE of plains 8,FALSE,FALSE,FALSE,
+0,2,-2,NW of plains 8,FALSE,TRUE,FALSE,Austronesians
+0,4,-4,SE of plains 8,FALSE,FALSE,FALSE,
+0,5,-5,E of hills 11,FALSE,TRUE,TRUE,Austronesians
+-2,5,-3,W of hills 11,FALSE,FALSE,FALSE,
+-2,6,-4,SW of hills 11,FALSE,TRUE,FALSE,Austronesians
+-1,6,-5,SE of hills 11,FALSE,FALSE,FALSE,
+2,4,-6,E of mountains 5,FALSE,TRUE,TRUE,Austronesians
+2,3,-5,NE of mountains 5,FALSE,FALSE,FALSE,
+1,5,-6,SE of mountains 5,FALSE,FALSE,FALSE,
+3,5,-8,E of plains 2,FALSE,FALSE,FALSE,
+1,6,-7,SW of plains 2,FALSE,TRUE,TRUE,Austronesians
+3,4,-7,NE of plains 2,FALSE,FALSE,FALSE,
+2,6,-8,SE of plains 2,FALSE,FALSE,FALSE,
+-1,7,-6,SW of forest 9,FALSE,TRUE,FALSE,Austronesians
+0,7,-7,SE of forest 9,FALSE,FALSE,FALSE,
+10,0,-10,E of forest 4,FALSE,TRUE,TRUE,Americans
+8,0,-8,W of forest 4,FALSE,FALSE,FALSE,
+8,1,-9,SW of forest 4,FALSE,FALSE,FALSE,
+10,-1,-9,NE of forest 4,FALSE,FALSE,FALSE,
+9,-1,-8,NW of forest 4,FALSE,FALSE,FALSE,
+9,1,-10,SE of forest 4,FALSE,FALSE,FALSE,
+9,2,-11,E of mountains 2,FALSE,TRUE,FALSE,Americans
+7,2,-9,W of mountains 2,FALSE,FALSE,FALSE,
+7,3,-10,SW of mountains 2,FALSE,FALSE,FALSE,
+8,3,-11,SE of mountains 2,FALSE,FALSE,FALSE,
+8,4,-12,E of mountains 10,FALSE,TRUE,TRUE,Americans
+6,4,-10,W of mountains 10,FALSE,FALSE,FALSE,
+6,5,-11,SW of mountains 10,FALSE,FALSE,FALSE,
+7,5,-12,SE of mountains 10,FALSE,FALSE,FALSE,
+11,1,-12,E of hills 8,FALSE,TRUE,FALSE,Americans
+11,0,-11,NE of hills 8,FALSE,FALSE,FALSE,
+10,2,-12,SE of hills 8,FALSE,FALSE,FALSE,
+10,3,-13,E of forest 5,FALSE,FALSE,FALSE,
+9,4,-13,SE of forest 5,FALSE,FALSE,FALSE,
+7,-1,-6,W of forest 9,FALSE,TRUE,TRUE,Americans
+7,0,-7,SW of forest 9,FALSE,FALSE,FALSE,
+9,-2,-7,NE of forest 9,FALSE,FALSE,FALSE,
+8,-2,-6,NW of forest 9,FALSE,FALSE,FALSE,
+10,-3,-7,E of hills 3,FALSE,FALSE,FALSE,
+8,-3,-5,W of hills 3,FALSE,TRUE,TRUE,Americans
+10,-4,-6,NE of hills 3,FALSE,TRUE,FALSE,Americans
+9,-4,-5,NW of hills 3,FALSE,FALSE,FALSE,
+11,-5,-6,E of forest 10,FALSE,FALSE,FALSE
+9,-5,-4,W of forest 10,FALSE,TRUE,TRUE,Americans
+11,-6,-5,NE of forest 10,FALSE,FALSE,FALSE,
+10,-6,-4,NW of forest 10,FALSE,FALSE,FALSE,
+12,-4,-8,E of plains 11,FALSE,FALSE,FALSE,
+12,-5,-7,NE of plains 11,FALSE,FALSE,FALSE,
+11,-3,-8,SE of plains 11,FALSE,FALSE,FALSE,
+6,-2,-4,W of plains 4,FALSE,FALSE,FALSE,
+6,-1,-5,SW of plains 4,FALSE,FALSE,FALSE,
+7,-3,-4,NW of plains 4,FALSE,FALSE,FALSE,
+7,-4,-3,W of mountains 6,FALSE,FALSE,FALSE,
+8,-5,-3,NW of mountains 6,FALSE,FALSE,FALSE,
+8,-6,-2,path to America,FALSE,FALSE,FALSE,
+9,-7,-2,bonus path,FALSE,FALSE,FALSE,
+9,-8,-1,bonus path,FALSE,FALSE,FALSE,
+7,-6,-1,path to America,FALSE,FALSE,FALSE,
+7,-7,0,path to America,FALSE,FALSE,FALSE,
+12,-7,-5,bonus path,FALSE,FALSE,FALSE,
+10,-7,-3,bonus path,FALSE,FALSE,FALSE,
+11,-8,-3,bonus path,FALSE,FALSE,FALSE,
+5,6,-11,bonus path,FALSE,FALSE,FALSE,
+3,2,-5,bonus path,FALSE,FALSE,FALSE,
+3,1,-4,bonus path,FALSE,FALSE,FALSE,
+4,0,-4,bonus path,FALSE,FALSE,FALSE,
+4,-1,-3,bonus path,FALSE,FALSE,FALSE,
+4,2,-6,bonus path,FALSE,FALSE,FALSE,
+5,1,-6,bonus path,FALSE,FALSE,FALSE,
+5,0,-5,bonus path,FALSE,FALSE,FALSE,
+4,5,-9,bonus path,FALSE,FALSE,FALSE,
+5,4,-9,bonus path,FALSE,FALSE,FALSE,
+5,3,-8,bonus path,FALSE,FALSE,FALSE,
+2,7,-9,bonus path,FALSE,FALSE,FALSE,
+3,7,-10,bonus path,FALSE,FALSE,FALSE,

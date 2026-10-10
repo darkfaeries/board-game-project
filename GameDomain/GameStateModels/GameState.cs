@@ -11,7 +11,7 @@ public class GameState
     public Guid? CurrentPlayerId { get; set; }
     public int TurnNumber { get; set; }
     public Player[] Players { get; set; } = Array.Empty<Player>();
-    public BoardState Board { get; set; } = new BoardState();
+    public BoardState Board { get; } 
     public VictoryState Victory { get; set; } = new VictoryState();
     public PendingDecision[] PendingDecisions { get; set; } = Array.Empty<PendingDecision>();
 

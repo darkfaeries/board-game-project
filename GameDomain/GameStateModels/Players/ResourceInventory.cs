@@ -26,5 +26,7 @@ public class ResourceInventory
     public int CountTotal() 
     {
         // TODO write
+        throw new NotImplementedException();
+        return 0;
     }
 }

@@ -6,5 +6,5 @@ using System.Linq;
 
 public class EnemyExplorationCounter : ExplorationCounter
 {
-    public EnemyType EnemyType { get; set; }
+    
 }
