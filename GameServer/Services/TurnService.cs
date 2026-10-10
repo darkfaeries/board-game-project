@@ -20,20 +20,22 @@ public class TurnService : ITurnService
             return new TurnResult(false, $"Session with ID {code} not found.");
         }
 
-        var player = session.GetPlayers().FirstOrDefault(p => p.Value.ConnectionId == connectionId).Value;
+        var player = session.GetPlayers().FirstOrDefault(p => p.ConnectionId == connectionId);
         if (player == null)
         {
             _logger.LogWarning($"Player with connection ID {connectionId} not found in session {code}.");
             return new TurnResult(false, $"Player with connection ID {connectionId} not found in session {code}.");
         }
 
-        if (session.GetCurrentPlayer()?.Id != player.Id)
+        if (session.GetGameState().CurrentPlayerId != player.Id)
         {
-            _logger.LogWarning($"Player {player.Username} attempted to end turn out of order in session {code}.");
-            return new TurnResult(false, $"It's not player {player.Username}'s turn.");
+            _logger.LogWarning($"Player {player.Name} attempted to end turn out of order in session {code}.");
+            return new TurnResult(false, $"It's not player {player.Name}'s turn.");
         }
 
+        session.GetGameState().Phase = TurnPhase.Roll;
         session.NextPlayer();
-        return new TurnResult(true, "Ok", session.GetCurrentPlayer());
+
+        return new TurnResult(true, "Ok", session.GetGameState().GetCurrentPlayer());
     }
 }
