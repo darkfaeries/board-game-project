@@ -6,6 +6,11 @@ using System.Linq;
 
 public class Player
 {
+    public Player(Guid id, string name, PlayerColor color)
+    {
+        Id = id;
+        Name = name ?? throw new ArgumentNullException("Empty player name");
+    }
     public Guid Id { get; }
     public string Name { get; } = string.Empty;
     public PlayerColor Color { get; }

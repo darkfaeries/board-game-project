@@ -151,6 +151,8 @@ public class BoardState
         return (exploration_paths, blocked_paths);
     }
 
+    public BoardState() { }
+
     // read board from csv file readers
     public BoardState(StreamReader hex_rd, StreamReader node_rd, StreamReader path_rd)
     {

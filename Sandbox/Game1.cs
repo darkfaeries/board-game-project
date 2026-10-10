@@ -1,25 +1,36 @@
-﻿using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
-
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace Sandbox;
 
 public class Game1 : Game
 {
-    private GraphicsDeviceManager _graphics;
+    private enum Screen { MainMenu, Connect, Board }
+    private Screen _screen = Screen.MainMenu;
+    private readonly GraphicsDeviceManager _graphics;
     private BasicEffect _effect;
     private SpriteBatch _spriteBatch;
     private SpriteFont _numberFont;
+    private Texture2D _pixel;
     private BoardState _board;
-
-    // Built once in world units (hex corner radius = 1); fitted to the window via the World matrix.
     private Mesh _boardMesh;
-    private Vector2 _boardMin;
-    private Vector2 _boardMax;
+    private Vector2 _boardMin, _boardMax;
+    private readonly ServerConnection _server = new();
+    private Task _request = Task.CompletedTask;
+    private MouseState _previousMouse;
+    private KeyboardState _previousKeyboard;
+    private string _joinCode = "", _gameCode = "", _status = "";
+    private int _players;
+    private const int ToolbarHeight = 64;
+    private bool Busy => !_request.IsCompleted;
+    private Rectangle MenuItem(int row) => new(GraphicsDevice.Viewport.Width / 2 - 150, 180 + row * 64, 300, 48);
+    private Rectangle MenuButton => new(12, 12, 150, 36);
 
     public Game1()
     {
@@ -27,53 +38,37 @@ public class Game1 : Game
         Content.RootDirectory = "Content";
         IsMouseVisible = true;
         Window.AllowUserResizing = true;
-
-        // Antialiasing: smooths the jagged edges of all triangles.
+        _graphics.PreferredBackBufferWidth = 1100;
+        _graphics.PreferredBackBufferHeight = 760;
         _graphics.GraphicsProfile = GraphicsProfile.HiDef;
         _graphics.PreferMultiSampling = true;
         _graphics.PreparingDeviceSettings += (_, e) =>
             e.GraphicsDeviceInformation.PresentationParameters.MultiSampleCount = 8;
-    }
-
-    protected override void Initialize()
-    {
-        string maps_path = "../GameDomain/GameFiles/Maps/";
-        string current_map_dir = "Default_Map/";
-
-        string hexes_path = maps_path + current_map_dir + "hexes.csv";
-        string nodes_path = maps_path + current_map_dir + "nodes.csv";
-        string paths_path = maps_path + current_map_dir + "paths.csv";
-
-        using (var hexes_rd = new StreamReader(hexes_path))
-        using (var nodes_rd = new StreamReader(nodes_path))
-        using (var paths_rd = new StreamReader(paths_path))
+        Window.TextInput += (_, e) =>
         {
-            _board = new BoardState(hexes_rd, nodes_rd, paths_rd);
-        }
-
-        Console.WriteLine($"hexes loaded: {_board.Hexes.Count}");
-        Console.WriteLine($"nodes loaded: {_board.Nodes.Count}");
-        Console.WriteLine($"explo paths loaded: {_board.ExplorationPaths.Count}");
-
-        base.Initialize();
+            if (_screen != Screen.Connect || Busy) return;
+            if (e.Character == '\b')
+            { if (_joinCode.Length > 0) _joinCode = _joinCode[..^1]; }
+            else if (char.IsAsciiLetterOrDigit(e.Character) && _joinCode.Length < 6)
+                _joinCode += char.ToUpperInvariant(e.Character);
+        };
     }
 
     protected override void LoadContent()
     {
-        _effect = new BasicEffect(GraphicsDevice)
-        {
-            VertexColorEnabled = true,
-        };
-
+        _effect = new BasicEffect(GraphicsDevice) { VertexColorEnabled = true };
         _spriteBatch = new SpriteBatch(GraphicsDevice);
         _numberFont = Content.Load<SpriteFont>("Fonts/NumberToken");
-
-        _boardMesh = BuildBoardMesh();
+        _pixel = new Texture2D(GraphicsDevice, 1, 1);
+        _pixel.SetData(new[] { Color.White });
+        // No map is loaded until Create game is clicked.
     }
 
     protected override void UnloadContent()
     {
+        _server.Dispose();
         _boardMesh?.Dispose();
+        _pixel?.Dispose();
         _effect?.Dispose();
         _spriteBatch?.Dispose();
     }
@@ -139,8 +134,16 @@ public class Game1 : Game
 
         if (node.Tribe is Tribe tribe)
         {
-            mb.AddUpTriangle(p, 0.22f, TribeColor(tribe));
-            mb.AddUpTriangleOutline(p, 0.22f, 0.03f, Color.Black);
+            mb.AddCircle(p, 0.22f, TribeColor(tribe));
+            if (node.CanSettle3p) 
+            {
+                mb.AddUpTriangle(p, 0.22f, TribeColor(tribe));
+                mb.AddUpTriangleOutline(p, 0.22f, 0.03f, Color.Black);
+            }
+        }
+        else if (node.IsStartSpace)
+        {
+            mb.AddCircle(p, 0.22f, Color.Black);
         }
         else
         {
@@ -150,33 +153,165 @@ public class Game1 : Game
 
     protected override void Update(GameTime gameTime)
     {
-        if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
-            Exit();
-
+        while (_server.Messages.TryDequeue(out var message))
+        {
+            if (!message.StartsWith("{"))
+            {
+                if (message == "Disconnected")
+                {
+                    _players = 0;
+                    if (_screen == Screen.Board)
+                    {
+                        _boardMesh?.Dispose(); _boardMesh = null; _board = null;
+                        _screen = Screen.MainMenu;
+                    }
+                }
+                _status = message;
+                continue;
+            }
+            try
+            {
+                Console.WriteLine(message);
+                using var doc = JsonDocument.Parse(message);
+                var root = doc.RootElement;
+                switch (root.GetProperty("Type").GetString())
+                {
+                    case "gameCode": _gameCode = root.GetProperty("Code").GetString(); break;
+                    case "playerCount": _players = root.GetProperty("Count").GetInt32(); break;
+                    case "gameState":
+                        if (!_server.IsConnected) throw new IOException("Connection closed before the board arrived");
+                        var snapshot = root.GetProperty("State").Deserialize<GameStateSnapshot>();
+                        var state = snapshot.ToGameState();
+                        var board = state.Board;
+                        _boardMesh?.Dispose();
+                        _board = board;
+                        _boardMesh = BuildBoardMesh();
+                        _gameCode = root.GetProperty("Code").GetString();
+                        _screen = Screen.Board;
+                        _status = "State received";
+                        break;
+                }
+            }
+            catch (Exception ex) { _status = "State error: " + ex.Message; }
+        }
+        var keyboard = Keyboard.GetState();
+        if (keyboard.IsKeyDown(Keys.Escape) && !_previousKeyboard.IsKeyDown(Keys.Escape) && !Busy)
+        {
+            if (_screen == Screen.MainMenu) Exit();
+            else ReturnToMenu();
+        }
+        if (_screen == Screen.Connect && keyboard.IsKeyDown(Keys.Enter) && !_previousKeyboard.IsKeyDown(Keys.Enter) && !Busy)
+            Join();
+        _previousKeyboard = keyboard;
+        var mouse = Mouse.GetState();
+        if (IsActive && mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released && !Busy)
+        {
+            var point = new Point(mouse.X, mouse.Y);
+            if (_screen == Screen.MainMenu)
+            {
+                if (MenuItem(0).Contains(point))
+                {
+                    try
+                    {
+                        StartRequest(_server.CreateGameAsync);
+                    }
+                    catch (Exception ex) { _status = "Map load failed: " + ex.Message; }
+                }
+                else if (MenuItem(1).Contains(point)) { _screen = Screen.Connect; _status = "Enter the game code"; }
+                else if (MenuItem(2).Contains(point)) Exit();
+            }
+            else if (_screen == Screen.Connect)
+            {
+                if (MenuItem(1).Contains(point)) Join();
+                else if (MenuItem(2).Contains(point)) ReturnToMenu();
+            }
+            else if (MenuButton.Contains(point)) ReturnToMenu();
+        }
+        _previousMouse = mouse;
         base.Update(gameTime);
+    }
+
+    private void Join()
+    {
+        if (_joinCode.Length != 6) { _status = "Enter a 6-character code"; return; }
+        string code = _joinCode;
+        StartRequest(() => _server.JoinGameAsync(code));
+    }
+
+    private void ReturnToMenu()
+    {
+        _screen = Screen.MainMenu;
+        _boardMesh?.Dispose(); _boardMesh = null; _board = null;
+        _gameCode = ""; _players = 0;
+        StartRequest(() => _server.DisconnectAsync());
+    }
+
+    private void StartRequest(Func<Task> operation)
+    {
+        _status = "Please wait...";
+        _request = ExecuteRequest(operation);
+    }
+    private async Task ExecuteRequest(Func<Task> operation)
+    {
+        try { await operation(); }
+        catch (Exception ex) { _server.Messages.Enqueue("Request failed: " + ex.Message); }
     }
 
     protected override void Draw(GameTime gameTime)
     {
-        GraphicsDevice.Clear(new Color(30, 110, 190));
-
-        var viewport = GraphicsDevice.Viewport;
-
-        // Pixel coordinates: (0,0) is the top-left corner, Y grows downwards.
-        _effect.Projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
-        Matrix world = FitToScreen(viewport.Width, viewport.Height, margin: 20f);
-        _effect.World = world;
-
-        GraphicsDevice.RasterizerState = RasterizerState.CullNone;
-        _boardMesh.Draw(GraphicsDevice, _effect);
-
-        // Same world matrix as the mesh, so text positions and sizes are in world units too.
-        _spriteBatch.Begin(transformMatrix: world, samplerState: SamplerState.LinearClamp);
-        foreach (var hex in _board.Hexes.Values)
-            DrawNumberToken(hex);
+        GraphicsDevice.Clear(_screen == Screen.Board ? new Color(30, 110, 190) : new Color(20, 25, 35));
+        if (_screen == Screen.Board && _boardMesh != null)
+        {
+            var viewport = GraphicsDevice.Viewport;
+            _effect.Projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
+            var world = FitToScreen(viewport.Width, viewport.Height, 20f);
+            _effect.World = world;
+            GraphicsDevice.RasterizerState = RasterizerState.CullNone;
+            _boardMesh.Draw(GraphicsDevice, _effect);
+            _spriteBatch.Begin(transformMatrix: world, samplerState: SamplerState.LinearClamp);
+            foreach (var hex in _board.Hexes.Values) DrawNumberToken(hex);
+            _spriteBatch.End();
+        }
+        _spriteBatch.Begin();
+        if (_screen == Screen.MainMenu)
+        {
+            UiText("BOARD GAME", new Vector2(GraphicsDevice.Viewport.Width / 2 - 90, 100));
+            Button(MenuItem(0), "Create game");
+            Button(MenuItem(1), "Connect");
+            Button(MenuItem(2), "Exit");
+            UiText(_status, new Vector2(24, 410));
+        }
+        else if (_screen == Screen.Connect)
+        {
+            UiText("CONNECT TO GAME", new Vector2(GraphicsDevice.Viewport.Width / 2 - 100, 100));
+            Button(MenuItem(0), _joinCode.Length == 0 ? "Type game code" : _joinCode);
+            Button(MenuItem(1), "Connect");
+            Button(MenuItem(2), "Back");
+            UiText(_status, new Vector2(24, 410));
+        }
+        else
+        {
+            _spriteBatch.Draw(_pixel, new Rectangle(0, 0, GraphicsDevice.Viewport.Width, ToolbarHeight), new Color(20, 25, 35));
+            Button(MenuButton, "Main menu");
+            UiText($"Code: {_gameCode}   Players: {_players}   {_status}", new Vector2(185, 20));
+        }
         _spriteBatch.End();
-
         base.Draw(gameTime);
+    }
+    private void Button(Rectangle bounds, string text)
+    {
+        _spriteBatch.Draw(_pixel, bounds, Busy ? new Color(45, 45, 50) : new Color(45, 70, 100));
+        UiText(text, new Vector2(bounds.X + 15, bounds.Y + 10));
+    }
+    private void UiText(string text, Vector2 position)
+    {
+        var chars = text.ToCharArray();
+        for (int i = 0; i < chars.Length; i++) if (chars[i] < 32 || chars[i] > 126) chars[i] = '?';
+        string visible = new(chars);
+        int maxChars = Math.Max(8, GraphicsDevice.Viewport.Width / 10);
+        if (visible.Length > maxChars) visible = visible[..maxChars];
+        _spriteBatch.DrawString(_numberFont, visible, position, Color.White, 0f, Vector2.Zero,
+            20f / _numberFont.LineSpacing, SpriteEffects.None, 0f);
     }
 
     private void DrawNumberToken(Hex hex)
@@ -196,9 +331,11 @@ public class Game1 : Game
     // World units -> pixels: scale so the board fits, then center it.
     private Matrix FitToScreen(int width, int height, float margin)
     {
+        if (_board == null) return Matrix.Identity;
         Vector2 size = _boardMax - _boardMin;
-        float scale = MathF.Min((width - 2 * margin) / size.X, (height - 2 * margin) / size.Y);
-        Vector2 offset = new Vector2(width, height) / 2f - (_boardMin + size / 2f) * scale;
+        float usableHeight = Math.Max(1, height - ToolbarHeight);
+        float scale = MathF.Min(Math.Max(1, width - 2 * margin) / size.X, Math.Max(1, usableHeight - 2 * margin) / size.Y);
+        Vector2 offset = new Vector2(width / 2f, ToolbarHeight + usableHeight / 2f) - (_boardMin + size / 2f) * scale;
 
         return Matrix.CreateScale(scale, scale, 1f) * Matrix.CreateTranslation(offset.X, offset.Y, 0f);
     }
@@ -213,6 +350,15 @@ public class Game1 : Game
     };
 
     private static Color TribeColor(Tribe tribe) => tribe switch
+    {
+        Tribe.Indo_Europeans => Color.White,
+        Tribe.Asians => Color.Gold,
+        Tribe.Austronesians => Color.Brown,
+        Tribe.Americans => Color.HotPink,
+        _ => Color.Magenta,
+    };
+
+    private static Color TribeSecondaryColor(Tribe tribe) => tribe switch
     {
         Tribe.Indo_Europeans => Color.White,
         Tribe.Asians => Color.Gold,

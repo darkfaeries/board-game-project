@@ -2,8 +2,9 @@ using System.Collections.Concurrent;
 
 namespace GameServer;
 
-public class GameSession(ILogger<GameSession> logger) : ISession
-{
+public class GameSession(ILogger<GameSession> logger, GameState gameState) : ISession
+{   
+    public GameState GetGameState() => gameState;
     public string Code { get; } = Guid.NewGuid().ToString("N")[..6].ToUpper();
     public ConcurrentDictionary<Guid, Player> Players { get; } = new();
     public int CurrentPlayerIndex { get; private set; } = 0;

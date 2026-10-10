@@ -6,6 +6,12 @@ using System.Linq;
 
 public class GameState
 {
+    public GameState() : this(new BoardState()) { }
+    public GameState(BoardState board)
+    {
+        Board = board ?? throw new ArgumentNullException(nameof(board));
+    }
+    
     public GameStatus Status { get; set; }
     public TurnPhase Phase { get; set; }
     public Guid? CurrentPlayerId { get; set; }

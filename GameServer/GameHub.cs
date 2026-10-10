@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace GameServer;
 
-class GameHub : Hub
+public class GameHub : Hub
 {
     ILogger<GameHub> _logger;
     private readonly IGameStore _store;
@@ -15,12 +15,29 @@ class GameHub : Hub
         _turnService = turnService;
     }
 
-    public async Task<string> CreateSession()
+    private static void ValidateUsername(string username)
     {
-        var session = _store.CreateSession();
+        if (string.IsNullOrWhiteSpace(username) || username.Length > 32)
+            throw new HubException("Username must contain 1 to 32 characters");
+    }
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, session.GetCode().ToString());
-        return session.GetCode();
+    public async Task<GameConnectionResult> CreateSession(string username)
+    {
+        ValidateUsername(username);
+        var board = MapService.LoadMap(null);
+        var session = _store.CreateSession(new GameState(board));
+    
+        try
+        {
+            await JoinSession(session.GetCode(), username);
+            await Groups.AddToGroupAsync(Context.ConnectionId, session.GetCode().ToString());
+        
+            return new GameConnectionResult { 
+                Code = session.GetCode(), 
+                State = GameStateSnapshot.FromGameState(session.GetGameState())
+            };
+        }
+        catch { _store.RemoveSession(session.GetCode()); throw; }
     }
 
     public async Task EndTurn(string code)
@@ -46,8 +63,10 @@ class GameHub : Hub
         });
     }
 
-    public async Task<int> JoinSession(string code, string username)
+    public async Task<GameConnectionResult> JoinSession(string code, string username)
     {
+        ValidateUsername(username);
+        
         var session = _store.GetSession(code);
         if (session == null)
         {
@@ -61,6 +80,8 @@ class GameHub : Hub
             ConnectionId = Context.ConnectionId
         };
 
+        var state = session.GetGameState() ?? throw new HubException("Game has no game state");
+        
         var result = session.JoinSession(player);
         if (!result)
         {
@@ -71,7 +92,7 @@ class GameHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, code);
         await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers().Count);
 
-        return session.GetPlayers().Count;
+        return new GameConnectionResult { Code = code, State = GameStateSnapshot.FromGameState(state) };
     }
 
     public async Task<int> LeaveSession(string code)
