@@ -11,6 +11,8 @@ public class Game1 : Game
 {
     private GraphicsDeviceManager _graphics;
     private BasicEffect _effect;
+    private SpriteBatch _spriteBatch;
+    private SpriteFont _numberFont;
     private BoardState _board;
 
     // Built once in world units (hex corner radius = 1); fitted to the window via the World matrix.
@@ -62,6 +64,9 @@ public class Game1 : Game
             VertexColorEnabled = true,
         };
 
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
+        _numberFont = Content.Load<SpriteFont>("Fonts/NumberToken");
+
         _boardMesh = BuildBoardMesh();
     }
 
@@ -69,6 +74,7 @@ public class Game1 : Game
     {
         _boardMesh?.Dispose();
         _effect?.Dispose();
+        _spriteBatch?.Dispose();
     }
 
     private Mesh BuildBoardMesh()
@@ -134,12 +140,33 @@ public class Game1 : Game
 
         // Pixel coordinates: (0,0) is the top-left corner, Y grows downwards.
         _effect.Projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
-        _effect.World = FitToScreen(viewport.Width, viewport.Height, margin: 20f);
+        Matrix world = FitToScreen(viewport.Width, viewport.Height, margin: 20f);
+        _effect.World = world;
 
         GraphicsDevice.RasterizerState = RasterizerState.CullNone;
         _boardMesh.Draw(GraphicsDevice, _effect);
 
+        // Same world matrix as the mesh, so text positions and sizes are in world units too.
+        _spriteBatch.Begin(transformMatrix: world, samplerState: SamplerState.LinearClamp);
+        foreach (var hex in _board.Hexes.Values)
+            DrawNumberToken(hex);
+        _spriteBatch.End();
+
         base.Draw(gameTime);
+    }
+
+    private void DrawNumberToken(Hex hex)
+    {
+        if (hex.NumberToken <= 0) return;
+
+        const float textHeight = 0.42f;
+        float scale = textHeight / _numberFont.LineSpacing;
+
+        string text = hex.NumberToken.ToString();
+        Vector2 origin = _numberFont.MeasureString(text) / 2f;
+        Color color = hex.NumberToken is 6 or 8 ? new Color(190, 30, 30) : new Color(70, 40, 20);
+
+        _spriteBatch.DrawString(_numberFont, text, HexLayout.ToWorld(hex.Coords), color, 0f, origin, scale, SpriteEffects.None, 0f);
     }
 
     // World units -> pixels: scale so the board fits, then center it.
