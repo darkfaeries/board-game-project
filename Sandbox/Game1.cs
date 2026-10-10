@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework.Input;
 
 using System;
 using System.IO;
+using System.Collections.Generic;
 
 namespace Sandbox;
 
@@ -80,15 +81,33 @@ public class Game1 : Game
     private Mesh BuildBoardMesh()
     {
         var mb = new MeshBuilder();
+        var pathsAdded = new HashSet<Path>();
 
         foreach (var hex in _board.Hexes.Values)
             AddHexTile(mb, hex);
 
         foreach (var path in _board.ExplorationPaths.Keys)
+        {
             AddExplorationPath(mb, path);
-
+            pathsAdded.Add(path);
+        }
+        
         foreach (var node in _board.Nodes.Values)
+        {
+            foreach (var other in node.Coords.HexGetNeighbors())
+            {
+                if (other.IsHex()) continue;
+                if (!_board.Nodes.ContainsKey(other)) continue;
+        
+                Path path = new Path(node.Coords, other);
+                if (!pathsAdded.Contains(path) && !_board.BlockedPaths.Contains(path)) 
+                {
+                    AddRegularPath(mb, path);
+                    pathsAdded.Add(path);
+                }
+            }
             AddNode(mb, node);
+        }
 
         _boardMin = mb.Min;
         _boardMax = mb.Max;
@@ -100,11 +119,16 @@ public class Game1 : Game
         Vector2 center = HexLayout.ToWorld(hex.Coords);
 
         mb.AddHexagon(center, 1f, TerrainColor(hex.Terrain));
-        mb.AddHexagonOutline(center, 1f, 0.08f, new Color(245, 215, 160));
+        // mb.AddHexagonOutline(center, 1f, 0.08f, new Color(245, 215, 160));
         mb.AddCircle(center, 0.3f, new Color(245, 225, 185));
     }
 
     private static void AddExplorationPath(MeshBuilder mb, Path path)
+    {
+        mb.AddLine(HexLayout.ToWorld(path.from), HexLayout.ToWorld(path.to), 0.12f, new Color(220, 100, 100));
+    }
+
+    private static void AddRegularPath(MeshBuilder mb, Path path)
     {
         mb.AddLine(HexLayout.ToWorld(path.from), HexLayout.ToWorld(path.to), 0.12f, new Color(220, 170, 100));
     }

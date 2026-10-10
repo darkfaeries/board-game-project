@@ -11,12 +11,12 @@ public class Path
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(from, to);
+        return from.GetHashCode() ^ to.GetHashCode();
     }
 
     public override bool Equals(object obj)
     {
-        return obj is Path other && ((from == other.from && to == other.to) || (from == other.to && to == other.from)); 
+        return obj is Path other && ((from.Equals(other.from) && to.Equals(other.to)) || (from.Equals(other.to) && to.Equals(other.from))); 
     }
 
     public Path(AxialCoords from_in, AxialCoords to_in)
