@@ -139,8 +139,16 @@ public class Game1 : Game
 
         if (node.Tribe is Tribe tribe)
         {
-            mb.AddUpTriangle(p, 0.22f, TribeColor(tribe));
-            mb.AddUpTriangleOutline(p, 0.22f, 0.03f, Color.Black);
+            mb.AddCircle(p, 0.22f, TribeColor(tribe));
+            if (node.CanSettle3p) 
+            {
+                mb.AddUpTriangle(p, 0.22f, TribeColor(tribe));
+                mb.AddUpTriangleOutline(p, 0.22f, 0.03f, Color.Black);
+            }
+        }
+        else if (node.IsStartSpace)
+        {
+            mb.AddCircle(p, 0.22f, Color.Black);
         }
         else
         {
@@ -213,6 +221,15 @@ public class Game1 : Game
     };
 
     private static Color TribeColor(Tribe tribe) => tribe switch
+    {
+        Tribe.Indo_Europeans => Color.White,
+        Tribe.Asians => Color.Gold,
+        Tribe.Austronesians => Color.Brown,
+        Tribe.Americans => Color.HotPink,
+        _ => Color.Magenta,
+    };
+
+    private static Color TribeSecondaryColor(Tribe tribe) => tribe switch
     {
         Tribe.Indo_Europeans => Color.White,
         Tribe.Asians => Color.Gold,
