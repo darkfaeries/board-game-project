@@ -160,7 +160,7 @@ class GameHub : Hub
             return;
         }
 
-        _playerService.DistributeHexResources(code, diceRoll);
+        _playerService.DistributeHexResources(session, diceRoll);
         session.NextPhase();
 
         await Clients.Group(code).SendAsync("RollPhaseCompleted", new
@@ -198,8 +198,8 @@ class GameHub : Hub
             throw new HubException("Not enough resources to spend");
         }
 
-        _playerService.AddResources(code, targetPlayerIdOrBank, offer.Keys.ToList());
-        _playerService.SpendResources(code, player.Id, offer.Keys.ToList());
+        _playerService.AddResources(session, targetPlayerIdOrBank, offer.Keys.ToList());
+        _playerService.SpendResources(session, player.Id, offer.Keys.ToList());
 
         session.NextPhase();
 
@@ -241,10 +241,10 @@ class GameHub : Hub
             throw new HubException("Not enough resources to give to the bank");
         }
 
-        _playerService.SpendResources(code, player.Id, resourcesToGive.Keys.ToList());
+        _playerService.SpendResources(session, player.Id, resourcesToGive.Keys.ToList());
 
         var reward = new Dictionary<ResourceType, int> { { resourceToGet, amountToGet } };
-        _playerService.AddResources(code, player.Id, reward.Keys.ToList());
+        _playerService.AddResources(session, player.Id, reward.Keys.ToList());
 
         session.NextPhase();
 
@@ -275,7 +275,7 @@ class GameHub : Hub
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
 
-        var result = _playerService.BuildCamp(code, player.Id, nodeId);
+        var result = _playerService.BuildCamp(session, player.Id, nodeId);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
 
         session.NextPhase();
@@ -302,7 +302,7 @@ class GameHub : Hub
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
 
-        var result = _playerService.BuildExplorer(code, player.Id, nodeId);
+        var result = _playerService.BuildExplorer(session, player.Id, nodeId);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
 
         session.NextPhase();
@@ -329,7 +329,7 @@ class GameHub : Hub
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
 
-        var result = _playerService.MoveExplorer(code, player.Id, sourcePathId, targetPathId);
+        var result = _playerService.MoveExplorer(session, player.Id, sourcePathId, targetPathId);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
 
         session.NextPhase();
@@ -356,7 +356,7 @@ class GameHub : Hub
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
 
-        var result = _playerService.AdvanceProgress(code, player.Id, progressType);
+        var result = _playerService.AdvanceProgress(session, player.Id, progressType);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
 
         session.NextPhase();
@@ -377,7 +377,7 @@ class GameHub : Hub
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
 
-        var isWinner = _playerService.CheckWinCondition(code, player.Id);
+        var isWinner = _playerService.CheckWinCondition(session, player.Id);
 
         if (isWinner)
         {

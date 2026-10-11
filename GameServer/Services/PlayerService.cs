@@ -2,25 +2,16 @@ namespace GameServer;
 
 public class PlayerService : IPlayerService
 {
-    private readonly IGameStore _gameStore;
     private ILogger<PlayerService> _logger;
 
-    public PlayerService(IGameStore gameStore, ILogger<PlayerService> logger)
+    public PlayerService(ILogger<PlayerService> logger)
     {
-        _gameStore = gameStore;
         _logger = logger;
     }
 
-    public void DistributeHexResources(string code, int diceValue)
+    public void DistributeHexResources(GameSession session, int diceValue)
     {
         if (diceValue == 7) return;
-
-        var session = _gameStore.GetSession(code);
-        if (session == null)
-        {
-            _logger.LogWarning($"Session with ID {code} not found.");
-            throw new KeyNotFoundException($"Session with ID {code} not found.");
-        }
 
         var state = session.GetGameState();
 
@@ -46,10 +37,14 @@ public class PlayerService : IPlayerService
         }
     }
 
-    public void AddResources(string code, Guid playerId, List<ResourceType> resources)
+    public void AddResources(GameSession session, Guid playerId, List<ResourceType> resources)
     {
-        var session = _gameStore.GetSession(code);
-        var player = GetValidPlayer(session, playerId);
+        var player = session.GetGameState().Players.FirstOrDefault(p => p.Id == playerId);
+        if (player == null)
+        {   
+            _logger.LogWarning($"Player with ID {playerId} not found.");
+            throw new KeyNotFoundException($"Player with ID {playerId} not found.");
+        }
 
         foreach (var resource in resources)
         {
@@ -57,10 +52,14 @@ public class PlayerService : IPlayerService
         }
     }
 
-    public void SpendResources(string code, Guid playerId, List<ResourceType> resources)
-    {
-        var session = _gameStore.GetSession(code);
-        var player = GetValidPlayer(session, playerId);
+    public void SpendResources(GameSession session, Guid playerId, List<ResourceType> resources)
+    {   
+        var player = session.GetGameState().Players.FirstOrDefault(p => p.Id == playerId);
+        if (player == null)
+        {   
+            _logger.LogWarning($"Player with ID {playerId} not found.");
+            throw new KeyNotFoundException($"Player with ID {playerId} not found.");
+        }
 
         foreach (var resource in resources)
         {
@@ -68,11 +67,8 @@ public class PlayerService : IPlayerService
         }
     }
 
-    public (bool IsSuccess, string ErrorMessage) BuildCamp(string code, Guid playerId, Guid nodeId)
+    public (bool IsSuccess, string ErrorMessage) BuildCamp(GameSession session, Guid playerId, Guid nodeId)
     {
-        var session = _gameStore.GetSession(code);
-        if (session == null) return (false, $"Session with code {code} not found.");
-
         var state = session.GetGameState();
         var player = state.Players.FirstOrDefault(p => p.Id == playerId);
         if (player == null) return (false, $"Player with id {playerId} not found.");
@@ -95,16 +91,13 @@ public class PlayerService : IPlayerService
             return (false, $"Node with ID {nodeId} is already occupied.");
         }
 
-        SpendResources(code, playerId, GameCosts.CampCost.Keys.ToList());
+        SpendResources(session, playerId, GameCosts.CampCost.Keys.ToList());
         player!.CampPositions.Add(nodeId);
         return (true, "Camp built successfully.");
     }
 
-    public (bool IsSuccess, string ErrorMessage) BuildExplorer(string code, Guid playerId, Guid nodeId)
+    public (bool IsSuccess, string ErrorMessage) BuildExplorer(GameSession session, Guid playerId, Guid nodeId)
     {
-        var session = _gameStore.GetSession(code);
-        if (session == null) return (false, $"Session witch code {code} not found.");
-
         var state = session.GetGameState();
         var player = state.Players.FirstOrDefault(p => p.Id == playerId);
         if (player == null) return (false, $"Player with id {playerId} not found.");
@@ -127,18 +120,15 @@ public class PlayerService : IPlayerService
             return (false, $"Node with ID {nodeId} is already occupied.");
         }
 
-        SpendResources(code, playerId, GameCosts.ExplorerCost.Keys.ToList());
+        SpendResources(session, playerId, GameCosts.ExplorerCost.Keys.ToList());
         player!.ExplorerPositions.Add(nodeId);
         return (true, "Explorer built successfully.");
     }
 
     public (bool IsSuccess, string ErrorMessage) MoveExplorer(
-        string code, Guid playerId, Guid sourcePathId, Guid targetPathId
+        GameSession session, Guid playerId, Guid sourcePathId, Guid targetPathId
         )
     {
-        var session = _gameStore.GetSession(code);
-        if (session == null) return (false, $"Session witch code {code} not found.");
-
         var state = session.GetGameState();
         var player = state.Players.FirstOrDefault(p => p.Id == playerId);
         if (player == null) return (false, $"Player with id {playerId} not found.");
@@ -168,7 +158,7 @@ public class PlayerService : IPlayerService
             return (false, $"Player with ID {playerId} does not meet requirements for path {targetPathId}.");
         }
 
-        SpendResources(code, playerId, GameCosts.MoveExplorerCost.Keys.ToList());
+        SpendResources(session, playerId, GameCosts.MoveExplorerCost.Keys.ToList());
 
         if (targetPath.ExplorationCounter != null)
         {
@@ -182,11 +172,9 @@ public class PlayerService : IPlayerService
         return (true, "Explorer moved successfully.");
     }
 
-    public (bool IsSuccess, string ErrorMessage) AdvanceProgress(string code, Guid playerId, ProgressType progressType)
+    public (bool IsSuccess, string ErrorMessage) AdvanceProgress(
+        GameSession session, Guid playerId, ProgressType progressType)
     {
-        var session = _gameStore.GetSession(code);
-        if (session == null) return (false, $"Session witch code {code} not found.");
-
         var state = session.GetGameState();
         var player = state.Players.FirstOrDefault(p => p.Id == playerId);
         if (player == null) return (false, $"Player with id {playerId} not found.");
@@ -201,7 +189,7 @@ public class PlayerService : IPlayerService
         int targetLevel = currentLevel + 1;
         var cost = ProgressCosts.GetCost(progressType, targetLevel);
 
-        SpendResources(code, playerId, cost.Keys.ToList());
+        SpendResources(session, playerId, cost.Keys.ToList());
         if (!player.Progress.Progress.TryAdd(progressType, targetLevel))
         {
             player.Progress.Progress[progressType] = targetLevel;
@@ -209,15 +197,8 @@ public class PlayerService : IPlayerService
         return (true, $"Progress in {progressType} advanced successfully.");
     }
 
-    public bool CheckWinCondition(string code, Guid playerId)
+    public bool CheckWinCondition(GameSession session, Guid playerId)
     {
-        var session = _gameStore.GetSession(code);
-        if (session == null)
-        {
-            _logger.LogWarning($"Session with ID {code} not found.");
-            throw new KeyNotFoundException($"Session with ID {code} not found.");
-        }
-
         var state = session.GetGameState();
         var player = state.Players.FirstOrDefault(p => p.Id == playerId);
         if (player == null)
@@ -243,17 +224,5 @@ public class PlayerService : IPlayerService
         var cost = ProgressCosts.GetCost(progressType, targetLevel);
 
         return player!.Resources.CanAfford(cost);
-    }
-
-    private Player GetValidPlayer(GameSession? session, Guid playerId)
-    {
-        if (session == null)
-            throw new KeyNotFoundException("Сессия не найдена.");
-
-        var player = session.GetGameState().Players.FirstOrDefault(p => p.Id == playerId);
-        if (player == null)
-            throw new KeyNotFoundException($"Игрок с ID {playerId} не найден.");
-
-        return player;
     }
 }
