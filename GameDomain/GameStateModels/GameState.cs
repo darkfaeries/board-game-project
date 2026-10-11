@@ -11,9 +11,14 @@ public class GameState
     public Guid? CurrentPlayerId { get; set; }
     public int TurnNumber { get; set; }
     public List<Player> Players { get; set; } = new();
-    public BoardState Board { get; set; } = new BoardState();
+    public BoardState Board { get; }
     public VictoryState Victory { get; set; } = new VictoryState();
     public PendingDecision[] PendingDecisions { get; set; } = Array.Empty<PendingDecision>();
+
+    public GameState(BoardState board)
+    {
+        Board = board;
+    }
 
     public Player GetCurrentPlayer()
     {
@@ -28,4 +33,7 @@ public class GameState
         // The diagram does not specify the scoring rules.
         throw new NotImplementedException();
     }
+
+    public Player? GetPlayer(Guid playerId) =>
+        Players.FirstOrDefault(player => player.Id == playerId);
 }

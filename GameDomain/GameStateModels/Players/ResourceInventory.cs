@@ -6,11 +6,16 @@ using System.Linq;
 
 public class ResourceInventory
 {
-    public Dictionary<ResourceType, int> Resources { get; set; } = new();
+    public Dictionary<ResourceType, int> Resources { get; set; } = new(){
+        { ResourceType.Bone, 1 },
+        { ResourceType.Flint, 0 },
+        { ResourceType.Hides, 1 },
+        { ResourceType.Meat, 0 }
+    };
 
     public int Get(ResourceType resourceType)
     {
-        return Resources[resourceType];
+        return Resources.GetValueOrDefault(resourceType);
     }
 
     public void Add(ResourceType resourceType, int amount)

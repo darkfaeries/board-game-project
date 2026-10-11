@@ -11,7 +11,11 @@ public class PlayerService : IPlayerService
 
     public void DistributeHexResources(GameSession session, int diceValue)
     {
-        if (diceValue == 7) return;
+        if (diceValue == 7)
+        {
+            _logger.LogInformation("Skipping resource distribution for dice value 7.");
+            return;
+        }
 
         var state = session.GetGameState();
 
@@ -22,85 +26,137 @@ public class PlayerService : IPlayerService
         foreach (var hex in activeHexes)
         {
             var resourceType = hex.GetProducedResource();
-            var adjacentNodes = state.Board.GetAdjacentIntersections(hex.Id);
+            var adjacentNodes = hex.Coords.HexGetNeighbors();
 
-            foreach (var node in adjacentNodes)
+            foreach (var nodeCoords in adjacentNodes)
             {
-                if (state.Board.IsOccupied(node.Id) && node.OccupantId.HasValue)
+                foreach (var owner in state.Players)
                 {
-                    var campId = node.OccupantId.Value;
-                    var owner = state.Players.FirstOrDefault(p => p.CampPositions.Contains(campId));
+                    var campsAtNode = owner.CampPositions.Count(camp => camp.Equals(nodeCoords));
+                    if (campsAtNode == 0) continue;
 
-                    owner?.Resources.Add(resourceType, 1);
+                    owner.Resources.Add(resourceType, campsAtNode);
+                    _logger.LogInformation(
+                        $"Added {campsAtNode} {resourceType} to player {owner.Id} from hex ({hex.Coords.q}, {hex.Coords.r}).");
                 }
             }
         }
     }
 
-    public void AddResources(GameSession session, Guid playerId, List<ResourceType> resources)
+    public void AddResources(
+        GameSession session, Guid playerId, Dictionary<ResourceType, int> resources)
     {
-        var player = session.GetGameState().Players.FirstOrDefault(p => p.Id == playerId);
+        ValidateResourceAmounts(resources);
+        var player = session.GetGameState().GetPlayer(playerId);
         if (player == null)
         {   
             _logger.LogWarning($"Player with ID {playerId} not found.");
             throw new KeyNotFoundException($"Player with ID {playerId} not found.");
         }
 
-        foreach (var resource in resources)
+        foreach (var (resource, amount) in resources)
         {
-            player.Resources.Add(resource, 1);
+            player.Resources.Add(resource, amount);
         }
+
+        _logger.LogInformation($"Added resources to player {playerId}.");
     }
 
-    public void SpendResources(GameSession session, Guid playerId, List<ResourceType> resources)
+    public void SpendResources(
+        GameSession session, Guid playerId, Dictionary<ResourceType, int> resources)
     {   
-        var player = session.GetGameState().Players.FirstOrDefault(p => p.Id == playerId);
+        ValidateResourceAmounts(resources);
+        var player = session.GetGameState().GetPlayer(playerId);
         if (player == null)
         {   
             _logger.LogWarning($"Player with ID {playerId} not found.");
             throw new KeyNotFoundException($"Player with ID {playerId} not found.");
         }
 
-        foreach (var resource in resources)
+        if (!player.Resources.CanAfford(resources))
         {
-            player.Resources.Spend(resource, 1);
+            _logger.LogWarning($"Player with ID {playerId} cannot afford requested resources.");
+            throw new InvalidOperationException($"Player with ID {playerId} cannot afford requested resources.");
         }
+
+        foreach (var (resource, amount) in resources)
+        {
+            player.Resources.Spend(resource, amount);
+        }
+
+        _logger.LogInformation($"Spent resources from player {playerId}.");
     }
 
-    public (bool IsSuccess, string ErrorMessage) BuildCamp(GameSession session, Guid playerId, Guid nodeId)
+    public void TradeWithBank(
+        GameSession session,
+        Guid playerId,
+        Dictionary<ResourceType, int> resourcesToGive,
+        ResourceType resourceToGet,
+        int amountToGet)
     {
-        var state = session.GetGameState();
-        var player = state.Players.FirstOrDefault(p => p.Id == playerId);
-        if (player == null) return (false, $"Player with id {playerId} not found.");
-
-        if (!CanBuildCamp(player))
+        if (amountToGet <= 0)
         {
-            _logger.LogWarning($"Player with ID {playerId} cannot afford to build a camp.");
-            return (false, $"Player with ID {playerId} cannot afford to build a camp.");
+            _logger.LogWarning($"Invalid bank trade reward amount {amountToGet}.");
+            throw new ArgumentOutOfRangeException(nameof(amountToGet));
         }
 
-        var node = state.Board.Intersections.GetValueOrDefault(nodeId);
-        if (node == null)
-        {
-            _logger.LogWarning($"Node with ID {nodeId} not found.");
-            return (false, $"Node with ID {nodeId} not found.");
-        }
-        if (state.Board.IsOccupied(nodeId))
-        {
-            _logger.LogWarning($"Node with ID {nodeId} is already occupied.");
-            return (false, $"Node with ID {nodeId} is already occupied.");
-        }
+        SpendResources(session, playerId, resourcesToGive);
+        AddResources(
+            session,
+            playerId,
+            new Dictionary<ResourceType, int> { { resourceToGet, amountToGet } });
 
-        SpendResources(session, playerId, GameCosts.CampCost.Keys.ToList());
-        player!.CampPositions.Add(nodeId);
-        return (true, "Camp built successfully.");
+        _logger.LogInformation($"Player {playerId} completed a bank trade.");
     }
 
-    public (bool IsSuccess, string ErrorMessage) BuildExplorer(GameSession session, Guid playerId, Guid nodeId)
+    public (bool IsSuccess, string ErrorMessage) ConvertExplorerToCamp(
+        GameSession session, Guid playerId, AxialCoords nodeCoords)
     {
         var state = session.GetGameState();
-        var player = state.Players.FirstOrDefault(p => p.Id == playerId);
-        if (player == null) return (false, $"Player with id {playerId} not found.");
+        var player = state.GetPlayer(playerId);
+        if (player == null)
+        {
+            _logger.LogWarning($"Player with ID {playerId} not found.");
+            return (false, $"Player with id {playerId} not found.");
+        }
+
+        if (!player.ExplorerPositions.Contains(nodeCoords))
+        {
+            _logger.LogWarning($"Player with ID {playerId} has no explorer at the selected node.");
+            return (false, "The player has no explorer at the selected node.");
+        }
+
+        if (!state.Board.Nodes.TryGetValue(nodeCoords, out var node) || !node.HasTribeCounter)
+        {
+            _logger.LogWarning($"Node with coordinates ({nodeCoords.q}, {nodeCoords.r}) has no tribe counter.");
+            return (false, "An explorer can be converted only on a node with a tribe counter.");
+        }
+
+        if (node.Tribe == null)
+        {
+            _logger.LogWarning($"Node with coordinates ({nodeCoords.q}, {nodeCoords.r}) has no tribe.");
+            return (false, "The selected node has no tribe.");
+        }
+
+        player.ExplorerPositions.Remove(nodeCoords);
+        player.CampPositions.Add(nodeCoords);
+        player.TribesCollected.Add(node.Tribe.Value);
+        node.HasTribeCounter = false;
+        _logger.LogInformation(
+            $"Converted explorer to camp for player {playerId} at ({nodeCoords.q}, {nodeCoords.r}).");
+        return (true, "Explorer converted to camp successfully.");
+    }
+
+    public (bool IsSuccess, string ErrorMessage) CreateExplorer(
+        GameSession session, Guid playerId, AxialCoords nodeCoords)
+    {
+        var state = session.GetGameState();
+        var player = state.GetPlayer(playerId);
+        if (player == null)
+        {
+            _logger.LogWarning($"Player with ID {playerId} not found.");
+            return (false, $"Player with id {playerId} not found.");
+        }
 
         if (!CanBuildExplorer(player))
         {
@@ -108,30 +164,50 @@ public class PlayerService : IPlayerService
             return (false, $"Player with ID {playerId} cannot afford to build an explorer.");
         }
 
-        var node = state.Board.Intersections.GetValueOrDefault(nodeId);
-        if (node == null)
+        if (player.ExplorerPositions.Count >= 2)
         {
-            _logger.LogWarning($"Node with ID {nodeId} not found.");
-            return (false, $"Node with ID {nodeId} not found.");
-        }
-        if (state.Board.IsOccupied(nodeId))
-        {
-            _logger.LogWarning($"Node with ID {nodeId} is already occupied.");
-            return (false, $"Node with ID {nodeId} is already occupied.");
+            _logger.LogWarning($"Player with ID {playerId} already has two explorers.");
+            return (false, "A player cannot have more than two explorers.");
         }
 
-        SpendResources(session, playerId, GameCosts.ExplorerCost.Keys.ToList());
-        player!.ExplorerPositions.Add(nodeId);
-        return (true, "Explorer built successfully.");
+        if (!state.Board.Nodes.ContainsKey(nodeCoords))
+        {
+            _logger.LogWarning($"Node with coordinates ({nodeCoords.q}, {nodeCoords.r}) not found.");
+            return (false, $"Node with coordinates ({nodeCoords.q}, {nodeCoords.r}) not found.");
+        }
+
+        if (state.Board.IsOccupied(nodeCoords))
+        {
+            _logger.LogWarning($"Node with coordinates ({nodeCoords.q}, {nodeCoords.r}) is already occupied.");
+            return (false, "Node is already occupied.");
+        }
+
+        if (!player.CampPositions.Any(camp =>
+                camp.NodeGetNodeNeighbors().Contains(nodeCoords)))
+        {
+            _logger.LogWarning(
+                $"Node with coordinates ({nodeCoords.q}, {nodeCoords.r}) is not adjacent to player {playerId} camp.");
+            return (false, "An explorer must be placed adjacent to one of your camps.");
+        }
+
+        SpendResources(session, playerId, GameCosts.ExplorerCost);
+        player.ExplorerPositions.Add(nodeCoords);
+        _logger.LogInformation(
+            $"Created explorer for player {playerId} at ({nodeCoords.q}, {nodeCoords.r}).");
+        return (true, "Explorer created successfully.");
     }
 
     public (bool IsSuccess, string ErrorMessage) MoveExplorer(
-        GameSession session, Guid playerId, Guid sourcePathId, Guid targetPathId
+        GameSession session, Guid playerId, List<AxialCoords> route
         )
     {
         var state = session.GetGameState();
-        var player = state.Players.FirstOrDefault(p => p.Id == playerId);
-        if (player == null) return (false, $"Player with id {playerId} not found.");
+        var player = state.GetPlayer(playerId);
+        if (player == null)
+        {
+            _logger.LogWarning($"Player with ID {playerId} not found.");
+            return (false, $"Player with id {playerId} not found.");
+        }
 
         if (!CanMoveExplorer(player))
         {
@@ -139,36 +215,68 @@ public class PlayerService : IPlayerService
             return (false, $"Player with ID {playerId} cannot afford to move an explorer.");
         }
 
-        if (!player.ExplorerPositions.Contains(sourcePathId))
+        if (route == null || route.Count < 2)
         {
-            _logger.LogWarning($"Player with ID {playerId} has no explorer on path {sourcePathId}.");
-            return (false, $"Player with ID {playerId} has no explorer on path {sourcePathId}.");
+            _logger.LogWarning($"Player with ID {playerId} provided an invalid explorer route.");
+            return (false, "The route must contain a source and a target node.");
         }
 
-        var targetPath = state.Board.Paths.GetValueOrDefault(targetPathId);
-        if (targetPath == null)
+        var sourceCoords = route[0];
+        var targetCoords = route[^1];
+        if (!player.ExplorerPositions.Contains(sourceCoords))
         {
-            _logger.LogWarning($"Path with ID {targetPathId} not found.");
-            return (false, $"Path with ID {targetPathId} not found.");
+            _logger.LogWarning($"Player with ID {playerId} has no explorer at the source node.");
+            return (false, "The player has no explorer at the source node.");
         }
 
-        if (targetPath.Requirement != null && !targetPath.Requirement.CanPass(player))
+        if (route.Count - 1 > 2 + player.Progress.GetLevel(ProgressType.Food))
         {
-            _logger.LogWarning($"Player with ID {playerId} does not meet requirements for path {targetPathId}.");
-            return (false, $"Player with ID {playerId} does not meet requirements for path {targetPathId}.");
+            _logger.LogWarning($"Player with ID {playerId} provided a route that is too long.");
+            return (false, "The explorer cannot move that far with the current food progress.");
         }
 
-        SpendResources(session, playerId, GameCosts.MoveExplorerCost.Keys.ToList());
-
-        if (targetPath.ExplorationCounter != null)
+        if (state.Board.IsOccupied(targetCoords))
         {
-            player.ExplorationCounters.Add(targetPath.ExplorationCounter);
-            targetPath.ExplorationCounter = null;
+            _logger.LogWarning($"Target node ({targetCoords.q}, {targetCoords.r}) is occupied.");
+            return (false, "An explorer must finish movement on an empty node.");
         }
 
-        player.ExplorerPositions.Remove(sourcePathId);
-        player.ExplorerPositions.Add(targetPathId);
+        for (var index = 0; index < route.Count - 1; index++)
+        {
+            var path = new Path(route[index], route[index + 1]);
+            if (state.Board.BlockedPaths.Contains(path) ||
+                !state.Board.ExplorationPaths.TryGetValue(path, out var explorationPath))
+            {
+                _logger.LogWarning($"No passable path exists between route nodes {index} and {index + 1}.");
+                return (false, "There is no passable path along the selected route.");
+            }
 
+            if (player.Progress.GetLevel(ProgressType.Clothing) < explorationPath.ClothingRequirement ||
+                player.Progress.GetLevel(ProgressType.Shelter) < explorationPath.ShelterRequirement)
+            {
+                _logger.LogWarning($"Player with ID {playerId} does not meet the route requirements.");
+                return (false, "The player does not meet the path requirements.");
+            }
+        }
+
+        SpendResources(session, playerId, GameCosts.MoveExplorerCost);
+
+        for (var index = 0; index < route.Count - 1; index++)
+        {
+            var path = new Path(route[index], route[index + 1]);
+            var explorationPath = state.Board.ExplorationPaths[path];
+            if (explorationPath.ExplorationCounter != null)
+            {
+                player.ExplorationCounters.Add(explorationPath.ExplorationCounter);
+                explorationPath.ExplorationCounter = null;
+            }
+        }
+
+        player.ExplorerPositions.Remove(sourceCoords);
+        player.ExplorerPositions.Add(targetCoords);
+
+        _logger.LogInformation(
+            $"Moved explorer for player {playerId} from ({sourceCoords.q}, {sourceCoords.r}) to ({targetCoords.q}, {targetCoords.r}).");
         return (true, "Explorer moved successfully.");
     }
 
@@ -176,8 +284,12 @@ public class PlayerService : IPlayerService
         GameSession session, Guid playerId, ProgressType progressType)
     {
         var state = session.GetGameState();
-        var player = state.Players.FirstOrDefault(p => p.Id == playerId);
-        if (player == null) return (false, $"Player with id {playerId} not found.");
+        var player = state.GetPlayer(playerId);
+        if (player == null)
+        {
+            _logger.LogWarning($"Player with ID {playerId} not found.");
+            return (false, $"Player with id {playerId} not found.");
+        }
 
         if (!CanAdvanceProgress(player, progressType))
         {
@@ -189,11 +301,14 @@ public class PlayerService : IPlayerService
         int targetLevel = currentLevel + 1;
         var cost = ProgressCosts.GetCost(progressType, targetLevel);
 
-        SpendResources(session, playerId, cost.Keys.ToList());
+        SpendResources(session, playerId, cost);
         if (!player.Progress.Progress.TryAdd(progressType, targetLevel))
         {
             player.Progress.Progress[progressType] = targetLevel;
         }
+
+        _logger.LogInformation(
+            $"Player {playerId} advanced {progressType} progress to level {targetLevel}.");
         return (true, $"Progress in {progressType} advanced successfully.");
     }
 
@@ -207,10 +322,21 @@ public class PlayerService : IPlayerService
             throw new KeyNotFoundException($"Player with ID {playerId} not found.");
         }
 
-        return state.CalculateVictoryPoints(playerId) >= GameConstants.VictoryPointsToWin;
+        var isWinner = state.CalculateVictoryPoints(playerId) >= GameConstants.VictoryPointsToWin;
+        _logger.LogInformation($"Checked win condition for player {playerId}: {isWinner}.");
+        return isWinner;
     }
 
-    private bool CanBuildCamp(Player player) => player.Resources.CanAfford(GameCosts.CampCost);
+    private void ValidateResourceAmounts(Dictionary<ResourceType, int> resources)
+    {
+        if (resources == null || resources.Count == 0 ||
+            resources.Any(resource => resource.Value <= 0))
+        {
+            _logger.LogWarning("Invalid resource amounts supplied.");
+            throw new ArgumentException("Resource amounts must be greater than zero.", nameof(resources));
+        }
+    }
+
     private bool CanBuildExplorer(Player player) => player.Resources.CanAfford(GameCosts.ExplorerCost);
     private bool CanMoveExplorer(Player player) => player.Resources.CanAfford(GameCosts.MoveExplorerCost);
     private bool CanAdvanceProgress(Player player, ProgressType progressType)

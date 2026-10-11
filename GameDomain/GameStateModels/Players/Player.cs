@@ -7,14 +7,15 @@ using System.Linq;
 public class Player
 {
     public Guid Id { get; }
-    public string Name { get; private set; } = string.Empty;
+    public string Name { get; } = string.Empty;
     public PlayerColor Color { get; }
     public ResourceInventory Resources { get; set; } = new ResourceInventory();
     public ProgressState Progress { get; set; } = new ProgressState();
-    public List<Guid> CampPositions { get; set; } = new();
-    public List<Guid> ExplorerPositions { get; set; } = new();
-    public List<TribeCounter> TribeCounters { get; set; } = new List<TribeCounter>();
-    public List<ExplorationCounter> ExplorationCounters { get; set; } = new List<ExplorationCounter>();
+    public List<AxialCoords> CampPositions { get; set; } = new List<AxialCoords>();
+    public List<AxialCoords> ExplorerPositions { get; set; } = new List<AxialCoords>();
+    public int TribeCounterNumber { get; set; }
+    public List<Tribe> TribesCollected { get; } = new List<Tribe>();
+    public List<ExplorationCounter> ExplorationCounters { get; } = new List<ExplorationCounter>();
 
     public string ConnectionId { get; set; } = string.Empty;
 

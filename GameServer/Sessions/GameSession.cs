@@ -57,7 +57,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
         gameState.CurrentPlayerId = gameState.Players[(index + 1) % gameState.Players.Count].Id;
     }
 
-    public void NextPhase()
+    public TurnPhase NextPhase()
     {
         gameState.Phase = gameState.Phase switch
         {
@@ -66,6 +66,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
             TurnPhase.Actions => TurnPhase.Roll,
             _ => throw new InvalidOperationException($"Invalid game phase: {gameState.Phase}")
         };
+        return gameState.Phase;
     }
 
     public int RollDice()

@@ -2,5 +2,5 @@ namespace GameServer;
 
 public interface ITurnService
 {
-    TurnResult EndTurn(string code, string connectionId);
+    TurnResult EndTurn(GameSession session, Guid playerId);
 }

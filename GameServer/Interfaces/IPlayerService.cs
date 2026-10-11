@@ -4,13 +4,23 @@ public interface IPlayerService
 {
     void DistributeHexResources(GameSession session, int diceValue);
 
-    void AddResources(GameSession session, Guid playerId, List<ResourceType> resources);
-    void SpendResources(GameSession session, Guid playerId, List<ResourceType> resources);
+    void AddResources(
+        GameSession session, Guid playerId, Dictionary<ResourceType, int> resources);
+    void SpendResources(
+        GameSession session, Guid playerId, Dictionary<ResourceType, int> resources);
+    void TradeWithBank(
+        GameSession session,
+        Guid playerId,
+        Dictionary<ResourceType, int> resourcesToGive,
+        ResourceType resourceToGet,
+        int amountToGet);
 
-    (bool IsSuccess, string ErrorMessage) BuildCamp(GameSession session, Guid playerId, Guid nodeId);
-    (bool IsSuccess, string ErrorMessage) BuildExplorer(GameSession session, Guid playerId, Guid nodeId);
+    (bool IsSuccess, string ErrorMessage) ConvertExplorerToCamp(
+        GameSession session, Guid playerId, AxialCoords nodeCoords);
+    (bool IsSuccess, string ErrorMessage) CreateExplorer(
+        GameSession session, Guid playerId, AxialCoords nodeCoords);
     (bool IsSuccess, string ErrorMessage) MoveExplorer(
-        GameSession session, Guid playerId, Guid sourcePathId, Guid targetPathId);
+        GameSession session, Guid playerId, List<AxialCoords> route);
     (bool IsSuccess, string ErrorMessage) AdvanceProgress(
         GameSession session, Guid playerId, ProgressType progressType);
 

@@ -2,9 +2,10 @@ using System.Collections.Concurrent;
 
 namespace GameServer;
 
-
-
-public class GameStore(ILogger<GameStore> logger, ILogger<GameSession> sessionLogger) : IGameStore
+public class GameStore(
+    ILogger<GameStore> logger,
+    ILogger<GameSession> sessionLogger,
+    IBoardFactory boardFactory) : IGameStore
 {
     public ConcurrentDictionary<string, GameSession> Sessions { get; private set; } = new();
 
@@ -41,8 +42,17 @@ public class GameStore(ILogger<GameStore> logger, ILogger<GameSession> sessionLo
 
     public GameSession CreateSession()
     {
-        var session = new GameSession(sessionLogger, new GameState());
-        Sessions.TryAdd(session.Code, session);
+        var session = new GameSession(
+            sessionLogger,
+            new GameState(boardFactory.GetClassicBoard()));
+
+        if (!Sessions.TryAdd(session.Code, session))
+        {
+            logger.LogError($"Failed to create session with ID {session.Code}: session already exists.");
+            throw new InvalidOperationException($"Session with ID {session.Code} already exists.");
+        }
+
+        logger.LogInformation($"Created game session with ID {session.Code}.");
         return session;
     }
 }

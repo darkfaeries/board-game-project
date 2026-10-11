@@ -8,12 +8,6 @@ class GameHub : Hub
     private readonly IGameStore _store;
     private readonly ITurnService _turnService;
     private readonly IPlayerService _playerService;
-    private readonly List<PlayerColor> _remainingColors = new List<PlayerColor> {
-        PlayerColor.Red,
-        PlayerColor.Blue,
-        PlayerColor.White,
-        PlayerColor.Orange
-        };
 
     public GameHub(
         ILogger<GameHub> logger, IGameStore store, ITurnService turnService, IPlayerService playerService
@@ -35,7 +29,18 @@ class GameHub : Hub
 
     public async Task EndTurn(string code)
     {
-        var turnResult = _turnService.EndTurn(code, Context.ConnectionId);
+        var session = _store.GetSession(code);
+        if (session == null)
+        {
+            _logger.LogCritical($"Failed to join session: session with id {code} doesn`t exist");
+            throw new HubException("SessionId doesn`t exist");
+        }
+
+        var player = session.GetPlayers()
+                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
+                    ?? throw new HubException("Player doesn't exist");
+
+        var turnResult = _turnService.EndTurn(session, player.Id);
 
         if (!turnResult.Result)
         {
@@ -65,21 +70,10 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        var player = new Player(username, _remainingColors[0])
+        var player = new Player(username, PlayerColor.White)
         {
             ConnectionId = Context.ConnectionId,
         };
-
-        if (_remainingColors.Count > 0)
-        {
-            _remainingColors.RemoveAt(0);
-        }
-        else
-        {
-            _logger.LogCritical($"Failed to join session: no more colors available");
-            throw new HubException("No more colors available");
-        }
-
 
         var result = session.JoinSession(player);
         if (!result)
@@ -147,6 +141,12 @@ class GameHub : Hub
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player doesn't exist");
+        EnsureCurrentPlayer(session, player);
+        if (playerId != player.Id)
+        {
+            _logger.LogWarning($"Player {player.Id} supplied another player ID for rolling.");
+            throw new HubException("Invalid player ID.");
+        }
 
         var diceRoll = session.RollDice();
         if (diceRoll == -1)
@@ -161,7 +161,6 @@ class GameHub : Hub
         }
 
         _playerService.DistributeHexResources(session, diceRoll);
-        session.NextPhase();
 
         await Clients.Group(code).SendAsync("RollPhaseCompleted", new
         {
@@ -191,6 +190,19 @@ class GameHub : Hub
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player doesn't exist");
+        EnsureCurrentPlayer(session, player);
+
+        if (targetPlayerIdOrBank == player.Id)
+        {
+            _logger.LogWarning($"Player {player.Id} attempted to trade with themselves.");
+            throw new HubException("You cannot trade with yourself.");
+        }
+
+        if (session.GetGameState().GetPlayer(targetPlayerIdOrBank) == null)
+        {
+            _logger.LogWarning($"Trade target {targetPlayerIdOrBank} was not found.");
+            throw new HubException("Target player was not found.");
+        }
 
         if (!player.Resources.CanAfford(offer))
         {
@@ -198,10 +210,8 @@ class GameHub : Hub
             throw new HubException("Not enough resources to spend");
         }
 
-        _playerService.AddResources(session, targetPlayerIdOrBank, offer.Keys.ToList());
-        _playerService.SpendResources(session, player.Id, offer.Keys.ToList());
-
-        session.NextPhase();
+        _playerService.AddResources(session, targetPlayerIdOrBank, offer);
+        _playerService.SpendResources(session, player.Id, offer);
 
         await Clients.Group(code).SendAsync("TradePhaseCompleted", new
         {
@@ -234,19 +244,24 @@ class GameHub : Hub
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
-
-        if (!player.Resources.CanAfford(resourcesToGive))
-        {
-            _logger.LogCritical($"Failed to execute Bank Trade: not enough resources to give to the bank for player {player.Name}");
-            throw new HubException("Not enough resources to give to the bank");
-        }
-
-        _playerService.SpendResources(session, player.Id, resourcesToGive.Keys.ToList());
+        EnsureCurrentPlayer(session, player);
 
         var reward = new Dictionary<ResourceType, int> { { resourceToGet, amountToGet } };
-        _playerService.AddResources(session, player.Id, reward.Keys.ToList());
-
-        session.NextPhase();
+        try
+        {
+            _playerService.TradeWithBank(
+                session, player.Id, resourcesToGive, resourceToGet, amountToGet);
+        }
+        catch (ArgumentException)
+        {
+            _logger.LogWarning($"Invalid bank trade requested by player {player.Id}.");
+            throw new HubException("Invalid bank trade.");
+        }
+        catch (InvalidOperationException)
+        {
+            _logger.LogWarning($"Player {player.Id} cannot afford the requested bank trade.");
+            throw new HubException("Not enough resources to give to the bank.");
+        }
 
         await Clients.Group(code).SendAsync("BankTradeCompleted", new
         {
@@ -256,34 +271,33 @@ class GameHub : Hub
         });
     }
 
-    public async Task BuildCamp(string code, Guid nodeId)
+    public async Task ConvertExplorerToCamp(string code, AxialCoords nodeCoords)
     {
         var session = _store.GetSession(code);
         if (session == null)
         {
-            _logger.LogCritical($"Failed to execute Build Camp : session with id {code} doesn`t exist");
+            _logger.LogCritical($"Failed to execute Convert Explorer To Camp : session with id {code} doesn`t exist");
             throw new HubException("SessionId doesn`t exist");
         }
 
         if (session.GetGameState().Phase != TurnPhase.Actions)
         {
-            _logger.LogCritical($"Failed to execute Build Camp : player cannot build camp in phase {session.GetGameState().Phase}");
+            _logger.LogCritical($"Failed to execute Convert Explorer To Camp : player cannot build camp in phase {session.GetGameState().Phase}");
             throw new HubException($"Cannot build camp in phase {session.GetGameState().Phase}");
         }
 
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
+        EnsureCurrentPlayer(session, player);
 
-        var result = _playerService.BuildCamp(session, player.Id, nodeId);
+        var result = _playerService.ConvertExplorerToCamp(session, player.Id, nodeCoords);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
 
-        session.NextPhase();
-
-        await Clients.Group(code).SendAsync("CampBuilt", new { player.Id, nodeId });
+        await Clients.Group(code).SendAsync("ExplorerConvertedToCamp", new { player.Id, nodeCoords });
     }
 
-    public async Task BuildExplorer(string code, Guid nodeId)
+    public async Task BuildExplorer(string code, AxialCoords nodeCoords)
     {
         var session = _store.GetSession(code);
         if (session == null)
@@ -301,16 +315,15 @@ class GameHub : Hub
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
+        EnsureCurrentPlayer(session, player);
 
-        var result = _playerService.BuildExplorer(session, player.Id, nodeId);
+        var result = _playerService.CreateExplorer(session, player.Id, nodeCoords);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
 
-        session.NextPhase();
-
-        await Clients.Group(code).SendAsync("ExplorerBuilt", new { player.Id, nodeId });
+        await Clients.Group(code).SendAsync("ExplorerBuilt", new { player.Id, nodeCoords });
     }
 
-    public async Task MoveExplorer(string code, Guid sourcePathId, Guid targetPathId)
+    public async Task MoveExplorer(string code, List<AxialCoords> route)
     {
         var session = _store.GetSession(code);
         if (session == null)
@@ -328,13 +341,12 @@ class GameHub : Hub
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
+        EnsureCurrentPlayer(session, player);
 
-        var result = _playerService.MoveExplorer(session, player.Id, sourcePathId, targetPathId);
+        var result = _playerService.MoveExplorer(session, player.Id, route);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
 
-        session.NextPhase();
-
-        await Clients.Group(code).SendAsync("ExplorerMoved", new { player.Id, sourcePathId, targetPathId });
+        await Clients.Group(code).SendAsync("ExplorerMoved", new { player.Id, route });
     }
 
     public async Task AdvanceProgress(string code, ProgressType progressType)
@@ -355,11 +367,10 @@ class GameHub : Hub
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
+        EnsureCurrentPlayer(session, player);
 
         var result = _playerService.AdvanceProgress(session, player.Id, progressType);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
-
-        session.NextPhase();
 
         await Clients.Group(code).SendAsync("ProgressAdvanced", new { player.Id, progressType });
     }
@@ -376,6 +387,7 @@ class GameHub : Hub
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
+        EnsureCurrentPlayer(session, player);
 
         var isWinner = _playerService.CheckWinCondition(session, player.Id);
 
@@ -413,5 +425,15 @@ class GameHub : Hub
         }
 
         await base.OnDisconnectedAsync(exception);
+    }
+
+    private void EnsureCurrentPlayer(GameSession session, Player player)
+    {
+        if (session.GetGameState().CurrentPlayerId != player.Id)
+        {
+            _logger.LogWarning(
+                $"Player {player.Id} attempted an action out of turn in session {session.Code}.");
+            throw new HubException("It is not your turn.");
+        }
     }
 }
