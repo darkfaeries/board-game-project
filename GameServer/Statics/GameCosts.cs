@@ -19,4 +19,36 @@ public static class GameCosts
     {
         { ResourceType.Meat, 1 }
     };
+
+    public static Dictionary<ResourceType, int> AdvanceLevelCost(int targetLevel)
+    {
+        return targetLevel switch
+        {
+            1 => _ = new Dictionary<ResourceType, int>
+            {
+                { ResourceType.Flint, 1 }
+            },
+            2 => _ = new Dictionary<ResourceType, int>
+            {
+                { ResourceType.Bone, 1 }
+            },
+            3 => _ = new Dictionary<ResourceType, int>
+            {
+                { ResourceType.Bone, 1 },
+                { ResourceType.Flint, 1 }
+            },
+            4 => _ = new Dictionary<ResourceType, int>
+            {
+                { ResourceType.Bone, 1 },
+                { ResourceType.Flint, 1 }
+            },
+            5 => _ = new Dictionary<ResourceType, int>
+            {
+                { ResourceType.Hides, 1 },
+                { ResourceType.Bone, 1 },
+                { ResourceType.Flint, 1 }
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(targetLevel), "Target level must be between 1 and 5.")
+        };
+    }
 }

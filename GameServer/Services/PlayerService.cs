@@ -307,7 +307,7 @@ public class PlayerService : IPlayerService
 
         int currentLevel = player.Progress.GetLevel(progressType);
         int targetLevel = currentLevel + 1;
-        var cost = ProgressCosts.GetCost(progressType, targetLevel);
+        var cost = GameCosts.AdvanceLevelCost(targetLevel);
 
         SpendResources(session, playerId, cost);
         if (!player.Progress.Progress.TryAdd(progressType, targetLevel))
@@ -356,7 +356,7 @@ public class PlayerService : IPlayerService
             return false;
 
         int targetLevel = currentLevel + 1;
-        var cost = ProgressCosts.GetCost(progressType, targetLevel);
+        var cost = GameCosts.AdvanceLevelCost(targetLevel);
 
         return player!.Resources.CanAfford(cost);
     }
