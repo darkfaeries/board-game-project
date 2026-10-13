@@ -249,8 +249,7 @@ class GameHub : Hub
         var reward = new Dictionary<ResourceType, int> { { resourceToGet, amountToGet } };
         try
         {
-            _playerService.TradeWithBank(
-                session, player.Id, resourcesToGive, resourceToGet, amountToGet);
+            _playerService.TradeWithBank(session, player.Id, resourcesToGive, resourceToGet);
         }
         catch (ArgumentException)
         {
@@ -297,7 +296,7 @@ class GameHub : Hub
         await Clients.Group(code).SendAsync("ExplorerConvertedToCamp", new { player.Id, nodeCoords });
     }
 
-    public async Task BuildExplorer(string code, AxialCoords nodeCoords)
+    public async Task CreateExplorer(string code, AxialCoords nodeCoords)
     {
         var session = _store.GetSession(code);
         if (session == null)
@@ -342,6 +341,12 @@ class GameHub : Hub
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player not found");
         EnsureCurrentPlayer(session, player);
+
+        if (route == null || route.Count != 2)
+        {
+            _logger.LogWarning($"Player {player.Id} must move an explorer along exactly one edge.");
+            throw new HubException("The route must contain exactly one edge.");
+        }
 
         var result = _playerService.MoveExplorer(session, player.Id, route);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);

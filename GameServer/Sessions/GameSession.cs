@@ -77,7 +77,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
             return -1;
         }
 
-        var diceRoll = new Random().Next(1, 6) + new Random().Next(1, 6);
+        var diceRoll = Random.Shared.Next(1, 7) + Random.Shared.Next(1, 7);
         logger.LogInformation($"Player {gameState.CurrentPlayerId} rolled a {diceRoll}");
         return diceRoll;
     }

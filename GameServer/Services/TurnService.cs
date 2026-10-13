@@ -11,7 +11,6 @@ public class TurnService : ITurnService
 
     public TurnResult EndTurn(GameSession session, Guid playerId)
     {
-        //var session = _gameStore.GetSession(code);
         if (session == null)
         {
             _logger.LogWarning($"Session not found.");

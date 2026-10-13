@@ -91,20 +91,19 @@ public class PlayerService : IPlayerService
         GameSession session,
         Guid playerId,
         Dictionary<ResourceType, int> resourcesToGive,
-        ResourceType resourceToGet,
-        int amountToGet)
+        ResourceType resourceToGet)
     {
-        if (amountToGet <= 0)
+        if (resourcesToGive.Keys.Count != 3)
         {
-            _logger.LogWarning($"Invalid bank trade reward amount {amountToGet}.");
-            throw new ArgumentOutOfRangeException(nameof(amountToGet));
+            _logger.LogWarning($"Player {playerId} must give exactly 3 resources to trade with the bank.");
+            throw new ArgumentException("Must give exactly 3 resources to trade with the bank.");
         }
 
         SpendResources(session, playerId, resourcesToGive);
         AddResources(
             session,
             playerId,
-            new Dictionary<ResourceType, int> { { resourceToGet, amountToGet } });
+            new Dictionary<ResourceType, int> { { resourceToGet, 1 } });
 
         _logger.LogInformation($"Player {playerId} completed a bank trade.");
     }
@@ -124,6 +123,12 @@ public class PlayerService : IPlayerService
         {
             _logger.LogWarning($"Player with ID {playerId} has no explorer at the selected node.");
             return (false, "The player has no explorer at the selected node.");
+        }
+
+        if (!CanBuildCamp(player))
+        {
+            _logger.LogWarning($"Player with ID {playerId} cannot afford to build a camp.");
+            return (false, "The player cannot afford to build a camp.");
         }
 
         if (!state.Board.Nodes.TryGetValue(nodeCoords, out var node) || !node.HasTribeCounter)
@@ -158,7 +163,7 @@ public class PlayerService : IPlayerService
             return (false, $"Player with id {playerId} not found.");
         }
 
-        if (!CanBuildExplorer(player))
+        if (!CanCreateExplorer(player))
         {
             _logger.LogWarning($"Player with ID {playerId} cannot afford to build an explorer.");
             return (false, $"Player with ID {playerId} cannot afford to build an explorer.");
@@ -215,10 +220,10 @@ public class PlayerService : IPlayerService
             return (false, $"Player with ID {playerId} cannot afford to move an explorer.");
         }
 
-        if (route == null || route.Count < 2)
+        if (route == null || route.Count != 2)
         {
             _logger.LogWarning($"Player with ID {playerId} provided an invalid explorer route.");
-            return (false, "The route must contain a source and a target node.");
+            return (false, "The route must contain exactly one edge.");
         }
 
         var sourceCoords = route[0];
@@ -241,16 +246,23 @@ public class PlayerService : IPlayerService
             return (false, "An explorer must finish movement on an empty node.");
         }
 
-        for (var index = 0; index < route.Count - 1; index++)
+        if (!state.Board.Nodes.ContainsKey(sourceCoords) ||
+            !state.Board.Nodes.ContainsKey(targetCoords) ||
+            !sourceCoords.NodeGetNodeNeighbors().Contains(targetCoords))
         {
-            var path = new Path(route[index], route[index + 1]);
-            if (state.Board.BlockedPaths.Contains(path) ||
-                !state.Board.ExplorationPaths.TryGetValue(path, out var explorationPath))
-            {
-                _logger.LogWarning($"No passable path exists between route nodes {index} and {index + 1}.");
-                return (false, "There is no passable path along the selected route.");
-            }
+            _logger.LogWarning($"No adjacent nodes exist between ({sourceCoords.q}, {sourceCoords.r}) and ({targetCoords.q}, {targetCoords.r}).");
+            return (false, "The explorer can move only between adjacent nodes.");
+        }
 
+        var path = new Path(sourceCoords, targetCoords);
+        if (state.Board.BlockedPaths.Contains(path))
+        {
+            _logger.LogWarning($"Path between ({sourceCoords.q}, {sourceCoords.r}) and ({targetCoords.q}, {targetCoords.r}) is blocked.");
+            return (false, "There is no passable path along the selected route.");
+        }
+
+        if (state.Board.ExplorationPaths.TryGetValue(path, out var explorationPath))
+        {
             if (player.Progress.GetLevel(ProgressType.Clothing) < explorationPath.ClothingRequirement ||
                 player.Progress.GetLevel(ProgressType.Shelter) < explorationPath.ShelterRequirement)
             {
@@ -261,15 +273,11 @@ public class PlayerService : IPlayerService
 
         SpendResources(session, playerId, GameCosts.MoveExplorerCost);
 
-        for (var index = 0; index < route.Count - 1; index++)
+        if (state.Board.ExplorationPaths.TryGetValue(path, out explorationPath) &&
+            explorationPath.ExplorationCounter != null)
         {
-            var path = new Path(route[index], route[index + 1]);
-            var explorationPath = state.Board.ExplorationPaths[path];
-            if (explorationPath.ExplorationCounter != null)
-            {
-                player.ExplorationCounters.Add(explorationPath.ExplorationCounter);
-                explorationPath.ExplorationCounter = null;
-            }
+            player.ExplorationCounters.Add(explorationPath.ExplorationCounter);
+            explorationPath.ExplorationCounter = null;
         }
 
         player.ExplorerPositions.Remove(sourceCoords);
@@ -337,7 +345,8 @@ public class PlayerService : IPlayerService
         }
     }
 
-    private bool CanBuildExplorer(Player player) => player.Resources.CanAfford(GameCosts.ExplorerCost);
+    private bool CanBuildCamp(Player player) => player.Resources.CanAfford(GameCosts.CampCost);
+    private bool CanCreateExplorer(Player player) => player.Resources.CanAfford(GameCosts.ExplorerCost);
     private bool CanMoveExplorer(Player player) => player.Resources.CanAfford(GameCosts.MoveExplorerCost);
     private bool CanAdvanceProgress(Player player, ProgressType progressType)
     {

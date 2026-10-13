@@ -12,8 +12,7 @@ public interface IPlayerService
         GameSession session,
         Guid playerId,
         Dictionary<ResourceType, int> resourcesToGive,
-        ResourceType resourceToGet,
-        int amountToGet);
+        ResourceType resourceToGet);
 
     (bool IsSuccess, string ErrorMessage) ConvertExplorerToCamp(
         GameSession session, Guid playerId, AxialCoords nodeCoords);
