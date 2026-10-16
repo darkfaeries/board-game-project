@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 
 namespace GameServer;
 
@@ -61,7 +62,7 @@ class GameHub : Hub
         });
     }
 
-    public async Task<int> JoinSession(string code, string username = "")
+    public async Task<int> JoinSession(string code, string username)
     {
         var session = _store.GetSession(code);
         if (session == null)
@@ -92,7 +93,7 @@ class GameHub : Hub
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, code);
-        await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers().Count());
+        await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers());
 
         return session.GetPlayers().Count();
     }
@@ -174,10 +175,9 @@ class GameHub : Hub
         if (diceRoll == 7)
         {
             // TODO: SomeService.HadleSeven();
-            return;
         }
-
-        _playerService.DistributeHexResources(session, diceRoll);
+        else 
+            _playerService.DistributeHexResources(session, diceRoll);
 
         await Clients.Group(code).SendAsync("RollPhaseCompleted", new
         {
@@ -187,7 +187,7 @@ class GameHub : Hub
     }
 
     public async Task TradeWithPlayer(
-        string code, Guid targetPlayerIdOrBank,
+        string code, Guid targetPlayerId,
         Dictionary<ResourceType, int> offer
         )
     {
@@ -209,15 +209,15 @@ class GameHub : Hub
                     ?? throw new HubException("Player doesn't exist");
         EnsureCurrentPlayer(session, player);
 
-        if (targetPlayerIdOrBank == player.Id)
+        if (targetPlayerId == player.Id)
         {
             _logger.LogWarning($"Player {player.Id} attempted to trade with themselves.");
             throw new HubException("You cannot trade with yourself.");
         }
 
-        if (session.GetGameState().GetPlayer(targetPlayerIdOrBank) == null)
+        if (session.GetGameState().GetPlayer(targetPlayerId) == null)
         {
-            _logger.LogWarning($"Trade target {targetPlayerIdOrBank} was not found.");
+            _logger.LogWarning($"Trade target {targetPlayerId} was not found.");
             throw new HubException("Target player was not found.");
         }
 
@@ -227,13 +227,13 @@ class GameHub : Hub
             throw new HubException("Not enough resources to spend");
         }
 
-        _playerService.AddResources(session, targetPlayerIdOrBank, offer);
+        _playerService.AddResources(session, targetPlayerId, offer);
         _playerService.SpendResources(session, player.Id, offer);
 
         await Clients.Group(code).SendAsync("TradePhaseCompleted", new
         {
             Source = player.Id,
-            target = targetPlayerIdOrBank,
+            target = targetPlayerId,
             Offer = offer
         });
     }
@@ -241,8 +241,7 @@ class GameHub : Hub
     public async Task TradeWithBank(
         string code,
         Dictionary<ResourceType, int> resourcesToGive,
-        ResourceType resourceToGet,
-        int amountToGet
+        ResourceType resourceToGet
     )
     {
         var session = _store.GetSession(code);
@@ -263,7 +262,7 @@ class GameHub : Hub
                     ?? throw new HubException("Player not found");
         EnsureCurrentPlayer(session, player);
 
-        var reward = new Dictionary<ResourceType, int> { { resourceToGet, amountToGet } };
+        var reward = new Dictionary<ResourceType, int> { { resourceToGet, 1 } };
         try
         {
             _playerService.TradeWithBank(session, player.Id, resourcesToGive, resourceToGet);
