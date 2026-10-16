@@ -70,7 +70,14 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        var player = new Player(username, PlayerColor.White)
+        var color = session.GivePlayerColor();
+        if (color == null)
+        {
+            _logger.LogCritical($"Failed to join session: no available colors for player {username}");
+            throw new HubException("No available colors for player");
+        }
+
+        var player = new Player(username, color.Value)
         {
             ConnectionId = Context.ConnectionId,
         };
@@ -78,6 +85,8 @@ class GameHub : Hub
         var result = session.JoinSession(player);
         if (!result)
         {
+            session.ReturnPlayerColor(player.Color);
+
             _logger.LogCritical($"Failed to join session: player {player.Name} already exists");
             throw new HubException("Player already exists");
         }
@@ -106,6 +115,13 @@ class GameHub : Hub
         {
             _logger.LogCritical($"Failed to leave session: player {player.Name} doesn`t exist");
             throw new HubException("Player doesn`t exist");
+        }
+
+        var returnColorResult = session.ReturnPlayerColor(player.Color);
+        if (!returnColorResult)
+        {
+            _logger.LogWarning($"Failed to return color {player.Color} for player {player.Name}");
+            throw new HubException("Failed to return player color");
         }
 
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, code);
@@ -157,6 +173,7 @@ class GameHub : Hub
 
         if (diceRoll == 7)
         {
+            // TODO: SomeService.HadleSeven();
             return;
         }
 

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 //using GameDomain;
 
 namespace GameServer;
@@ -16,7 +17,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
                 );
             return false;
         }
-        
+
         if (gameState.Players.Any(p => p.Id == new_player.Id))
         {
             logger.LogWarning(
@@ -81,6 +82,31 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
         logger.LogInformation($"Player {gameState.CurrentPlayerId} rolled a {diceRoll}");
         return diceRoll;
     }
+
+    public PlayerColor? GivePlayerColor()
+    {
+        var availableColor = gameState.AvailableColors.FirstOrDefault(c => c.Value > 0);
+        if (availableColor.Value == 0)
+        {
+            logger.LogWarning($"No available colors to give to player {gameState.CurrentPlayerId}");
+            return null;
+        }
+        gameState.AvailableColors[availableColor.Key] -= 1;
+        return availableColor.Key;
+    }
+
+    public bool ReturnPlayerColor(PlayerColor color)
+    {
+        if (gameState.AvailableColors.ContainsKey(color))
+            gameState.AvailableColors[color] += 1;
+        
+        else
+        {
+            logger.LogWarning($"Attempted to return an invalid color {color} to the available colors");
+            return false;
+        }
+        return true;
+    } 
 
     public Player[] GetPlayers() => gameState.Players.ToArray();
     public GameState GetGameState() => gameState;

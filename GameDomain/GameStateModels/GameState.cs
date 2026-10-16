@@ -11,6 +11,13 @@ public class GameState
     public Guid? CurrentPlayerId { get; set; }
     public int TurnNumber { get; set; }
     public List<Player> Players { get; set; } = new();
+    public Dictionary<PlayerColor, int> AvailableColors { get; set; } = new()
+    {
+        { PlayerColor.Red, 1 },
+        { PlayerColor.Blue, 1 },
+        { PlayerColor.White, 1 },
+        { PlayerColor.Orange, 1 }
+    };
     public BoardState Board { get; }
     public VictoryState Victory { get; set; } = new VictoryState();
     public PendingDecision[] PendingDecisions { get; set; } = Array.Empty<PendingDecision>();
