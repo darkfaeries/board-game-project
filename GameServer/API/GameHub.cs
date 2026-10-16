@@ -429,6 +429,13 @@ class GameHub : Hub
 
             if (player is null) continue;
 
+            var returnColorResult = session.ReturnPlayerColor(player.Color);
+            if (!returnColorResult)
+            {
+                _logger.LogWarning($"Failed to return color {player.Color} for player {player.Name}");
+                throw new HubException("Failed to return player color");
+            }
+
             session.LeaveSession(player.Id);
             await Groups.RemoveFromGroupAsync(connectionId, code);
             await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers().Count());
