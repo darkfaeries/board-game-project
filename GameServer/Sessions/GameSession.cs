@@ -54,8 +54,15 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
     public void NextPlayer()
     {
         if (gameState.Players.Count == 0) return;
+
         var index = gameState.Players.FindIndex(p => p.Id == gameState.CurrentPlayerId);
         gameState.CurrentPlayerId = gameState.Players[(index + 1) % gameState.Players.Count].Id;
+
+        if (gameState.CurrentPlayerId == gameState.Players[0].Id)
+        {
+            gameState.TurnNumber++;
+            logger.LogInformation($"Turn {gameState.TurnNumber} started.");
+        }
     }
 
     public TurnPhase NextPhase()
