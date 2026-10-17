@@ -8,30 +8,28 @@ using Microsoft.AspNetCore.SignalR.Client;
 
 namespace Sandbox;
 
-// Background callbacks only queue data; Game1.Update owns rendering and screen transitions.
 public sealed class ServerConnection : IDisposable
 {
     public ConcurrentQueue<string> Messages { get; } = new();
     public bool IsConnected => _connection?.State == HubConnectionState.Connected;
     private HubConnection _connection;
     private string _gameCode;
-    private readonly string _username = Environment.GetEnvironmentVariable("GAME_PLAYER_NAME")
-        ?? "Player-" + Guid.NewGuid().ToString("N")[..6];
+    private readonly string _username = "Player-" + Guid.NewGuid().ToString("N")[..6];
 
     private async Task OpenAsync()
     {
         await DisconnectAsync();
-        string url = (Environment.GetEnvironmentVariable("GAME_SERVER_URL") ?? "http://localhost:5285").TrimEnd('/');
+        string url = "http://localhost:5285/gamehub";
         var uri = new UriBuilder(url);
-        if (uri.Scheme == "ws") uri.Scheme = "http";
-        if (uri.Scheme == "wss") uri.Scheme = "https";
-        if (!uri.Path.TrimEnd('/').EndsWith("/gamehub", StringComparison.OrdinalIgnoreCase))
-            uri.Path = uri.Path.TrimEnd('/') + "/gamehub";
+        
         _connection = new HubConnectionBuilder().WithUrl(uri.Uri).Build();
+        
         _connection.On<int>("PlayerCountChanged", count =>
             Messages.Enqueue(JsonSerializer.Serialize(new { Type = "playerCount", Count = count })));
+        
         _connection.On<JsonElement>("TurnChanged", change =>
             Messages.Enqueue("Turn changed: " + change.ToString()));
+        
         _connection.Closed += error =>
         {
             Messages.Enqueue(error == null ? "Disconnected" : "Connection error: " + error.Message);
@@ -88,8 +86,8 @@ public sealed class ServerConnection : IDisposable
         }
         catch (Exception ex) { Messages.Enqueue("Leave: " + ex.Message); }
         finally
-        {
-            await connection.DisposeAsync();
+        {   
+            try { await connection.DisposeAsync(); } catch { }
             _connection = null; _gameCode = null;
         }
     }
@@ -97,7 +95,6 @@ public sealed class ServerConnection : IDisposable
     public void Dispose()
     {
         var connection = _connection;
-        // Disposing the hub connection triggers the server's OnDisconnectedAsync.
         if (connection != null) _ = DisposeQuietly(connection);
     }
     private static async Task DisposeQuietly(HubConnection connection)

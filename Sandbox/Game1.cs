@@ -61,7 +61,6 @@ public class Game1 : Game
         _numberFont = Content.Load<SpriteFont>("Fonts/NumberToken");
         _pixel = new Texture2D(GraphicsDevice, 1, 1);
         _pixel.SetData(new[] { Color.White });
-        // No map is loaded until Create game is clicked.
     }
 
     protected override void UnloadContent()
@@ -176,7 +175,6 @@ public class Game1 : Game
                 var root = doc.RootElement;
                 switch (root.GetProperty("Type").GetString())
                 {
-                    case "gameCode": _gameCode = root.GetProperty("Code").GetString(); break;
                     case "playerCount": _players = root.GetProperty("Count").GetInt32(); break;
                     case "gameState":
                         if (!_server.IsConnected) throw new IOException("Connection closed before the board arrived");
@@ -254,7 +252,10 @@ public class Game1 : Game
     private async Task ExecuteRequest(Func<Task> operation)
     {
         try { await operation(); }
-        catch (Exception ex) { _server.Messages.Enqueue("Request failed: " + ex.Message); }
+        catch (Exception ex) 
+        { 
+            _server.Messages.Enqueue("Request failed: " + ex.Message); 
+        }
     }
 
     protected override void Draw(GameTime gameTime)
