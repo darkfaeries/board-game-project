@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace GameClient;
 
@@ -15,6 +16,17 @@ public class GameClient
     public bool IsConnected => _hub?.State == HubConnectionState.Connected;
 
     public event Action<int>? PlayerCountChanged;
+    public event Action<GameStartedEvent>? GameStarted;
+    public event Action<TurnChangedEvent>? TurnChanged;
+    public event Action<RollPhaseCompletedEvent>? RollPhaseCompleted;
+    public event Action<PlayerTradePhaseCompletedEvent>? PlayerTradePhaseCompleted;
+    public event Action<BankTradeCompletedEvent>? BankTradeCompleted;
+    public event Action<ExplorerCreatedEvent>? ExplorerCreated;
+    public event Action<ExplorerMovedEvent>? ExplorerMoved;
+    public event Action<ExplorerConvertedToCampEvent>? ExplorerConvertedToCamp;
+    public event Action<ProgressAdvancedEvent>? ProgressAdvanced;
+    public event Action<WinnerCheckedEvent>? WinnerChecked;
+
 
     public GameClient(string baseUrl, ILogger<GameClient> logger)
     {
@@ -38,6 +50,9 @@ public class GameClient
         }
     }
 
+    public Task<(bool Ok, string? Error)> StartGameAsync() =>
+        InvokeGameMethodAsync("StartGame", false);
+
     public async Task<(bool Ok, string? Error)> ConnectAsync(string gameCode)
     {
         if (string.IsNullOrWhiteSpace(gameCode))
@@ -47,7 +62,7 @@ public class GameClient
         }
 
         //пока нет авторизации будет рандомыш
-        var tempname = $"Player_{Guid.NewGuid().ToString().Substring(0, 4)}"; 
+        var tempname = $"Player_{Guid.NewGuid().ToString().Substring(0, 4)}";
 
         try
         {
@@ -66,239 +81,38 @@ public class GameClient
         }
     }
 
-    public async Task<(bool Ok, string? Error)> LeaveSessionAsync()
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
+    public Task<(bool Ok, string? Error)> LeaveSessionAsync() =>
+        InvokeGameMethodAsync("LeaveSession", true);
 
-        try
-        {
-            await EnsureConnectedAsync();
+    public Task<(bool Ok, string? Error)> RollPhaseAsync(Guid playerId) =>
+        InvokeGameMethodAsync("RollPhase", false, playerId);
 
-            var code = GameCode!;
-            await _hub!.InvokeAsync("LeaveSession", code);
+    public Task<(bool Ok, string? Error)> TradeWithPlayerAsync(
+        Guid targetPlayerId, Dictionary<ResourceType, int> offer) =>
+        InvokeGameMethodAsync("TradeWithPlayer", false, targetPlayerId, offer);
 
-            ClearSession();
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
-
-    public async Task<(bool Ok, string? Error)> RollPhaseAsync(Guid playerId)    
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
-
-        try
-        {
-            await EnsureConnectedAsync();
-
-            var code = GameCode!;
-            await _hub!.InvokeAsync("RollPhase", code, playerId);
-
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
-
-    public async Task<(bool Ok, string? Error)> TradeWithPlayerAsync(
-        Guid targetPlayerId, Dictionary<ResourceType, int> offer)
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
-
-        try
-        {
-            await EnsureConnectedAsync();
-
-            var code = GameCode!;
-            await _hub!.InvokeAsync("TradeWithPlayer", code, targetPlayerId, offer);
-
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
-
-    public async Task<(bool Ok, string? Error)> TradeWithBankAsync(
+    public Task<(bool Ok, string? Error)> TradeWithBankAsync(
         Dictionary<ResourceType, int> resourcesToGive,
-        ResourceType resourceToGet)
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
+        ResourceType resourceToGet) =>
+        InvokeGameMethodAsync("TradeWithBank", false, resourcesToGive, resourceToGet);
 
-        try
-        {
-            await EnsureConnectedAsync();
+    public Task<(bool Ok, string? Error)> ConvertExplorerToCampAsync(AxialCoords nodeCoords) =>
+        InvokeGameMethodAsync("ConvertExplorerToCamp", false, nodeCoords);
 
-            var code = GameCode!;
-            await _hub!.InvokeAsync("TradeWithBank", code, resourcesToGive, resourceToGet);
+    public Task<(bool Ok, string? Error)> CreateExplorerAsync(AxialCoords nodeCoords) =>
+        InvokeGameMethodAsync("CreateExplorer", false, nodeCoords);
 
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
+    public Task<(bool Ok, string? Error)> MoveExplorerAsync(List<AxialCoords> route) =>
+        InvokeGameMethodAsync("MoveExplorer", false, route);
 
-    public async Task<(bool Ok, string? Error)> ConvertExplorerToCampAsync(AxialCoords nodeCoords)
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
+    public Task<(bool Ok, string? Error)> AdvanceProgressAsync(ProgressType progressType) =>
+        InvokeGameMethodAsync("AdvanceProgress", false, progressType);
 
-        try
-        {
-            await EnsureConnectedAsync();
+    public Task<(bool Ok, string? Error)> CheckWinnerAsync() =>
+        InvokeGameMethodAsync("CheckWinner", false);
 
-            var code = GameCode!;
-            await _hub!.InvokeAsync("ConvertExplorerToCamp", code, nodeCoords);
-
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
-
-    public async Task<(bool Ok, string? Error)> CreateExplorerAsync(AxialCoords nodeCoords)
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
-
-        try
-        {
-            await EnsureConnectedAsync();
-
-            var code = GameCode!;
-            await _hub!.InvokeAsync("CreateExplorer", code, nodeCoords);
-
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
-
-    public async Task<(bool Ok, string? Error)> MoveExplorerAsync(List<AxialCoords> route)
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
-
-        try
-        {
-            await EnsureConnectedAsync();
-
-            var code = GameCode!;
-            await _hub!.InvokeAsync("MoveExplorer", code, route);
-
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
-
-    public async Task<(bool Ok, string? Error)> AdvanceProgressAsync(ProgressType progressType)
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
-
-        try
-        {
-            await EnsureConnectedAsync();
-
-            var code = GameCode!;
-            await _hub!.InvokeAsync("AdvanceProgress", code, progressType);
-
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
-
-    public async Task<(bool Ok, string? Error)> CheckWinnerAsync()
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
-
-        try
-        {
-            await EnsureConnectedAsync();
-
-            var code = GameCode!;
-            await _hub!.InvokeAsync("CheckWinner", code);
-
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
-
-    public async Task<(bool Ok, string? Error)> EndTurnAsync()
-    {
-        if (string.IsNullOrWhiteSpace(GameCode))
-        {
-            ClearSession();
-            return (false, "You are not connected to a session.");
-        }
-
-        try
-        {
-            await EnsureConnectedAsync();
-
-            var code = GameCode!;
-            await _hub!.InvokeAsync("EndTurn", code);
-
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex);
-        }
-    }
+    public Task<(bool Ok, string? Error)> EndTurnAsync() =>
+        InvokeGameMethodAsync("EndTurn", false);
 
     public async Task DisconnectAsync()
     {
@@ -334,13 +148,61 @@ public class GameClient
             .WithAutomaticReconnect()
             .Build();
 
-        _hub.On<int>("PlayerCountChanged", count =>
+        _hub.On<JsonElement>("PlayerCountChanged", payload =>
         {
-            PlayerCount = count;
-            PlayerCountChanged?.Invoke(count);
+            PlayerCount = payload.ValueKind == JsonValueKind.Array
+                ? payload.GetArrayLength()
+                : payload.GetInt32();
+            PlayerCountChanged?.Invoke(PlayerCount);
         });
+        _hub.On<GameStartedEvent>("GameStarted", value => GameStarted?.Invoke(value));
+        _hub.On<TurnChangedEvent>("TurnChanged", value => TurnChanged?.Invoke(value));
+        _hub.On<RollPhaseCompletedEvent>("RollPhaseCompleted", value => RollPhaseCompleted?.Invoke(value));
+        _hub.On<PlayerTradePhaseCompletedEvent>(
+            "PlayerTradePhaseCompleted",
+            value => PlayerTradePhaseCompleted?.Invoke(value));
+        _hub.On<BankTradeCompletedEvent>("BankTradeCompleted", value => BankTradeCompleted?.Invoke(value));
+        _hub.On<ExplorerCreatedEvent>("ExplorerCreated", value => ExplorerCreated?.Invoke(value));
+        _hub.On<ExplorerMovedEvent>("ExplorerMoved", value => ExplorerMoved?.Invoke(value));
+        _hub.On<ExplorerConvertedToCampEvent>(
+            "ExplorerConvertedToCamp",
+            value => ExplorerConvertedToCamp?.Invoke(value));
+        _hub.On<ProgressAdvancedEvent>("ProgressAdvanced", value => ProgressAdvanced?.Invoke(value));
+        _hub.On<WinnerCheckedEvent>("WinnerChecked", value => WinnerChecked?.Invoke(value));
 
         await _hub.StartAsync();
+    }
+
+    private async Task<(bool Ok, string? Error)> InvokeGameMethodAsync(
+        string methodName,
+        bool clearSessionOnSuccess,
+        params object[] args)
+    {
+        if (string.IsNullOrWhiteSpace(GameCode))
+        {
+            ClearSession();
+            return (false, "You are not connected to a session.");
+        }
+
+        try
+        {
+            await EnsureConnectedAsync();
+
+            var invocationArgs = new object[args.Length + 1];
+            invocationArgs[0] = GameCode!;
+            Array.Copy(args, 0, invocationArgs, 1, args.Length);
+
+            await _hub!.InvokeAsync(methodName, invocationArgs);
+
+            if (clearSessionOnSuccess)
+                ClearSession();
+
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex);
+        }
     }
 
     private (bool Ok, string? Error) Fail(Exception ex)
@@ -364,3 +226,22 @@ public class GameClient
         PlayerCount = 0;
     }
 }
+
+public sealed record GameStartedEvent(Guid? CurrentPlayerId, TurnPhase CurrentPhase);
+public sealed record TurnChangedEvent(Guid NextPlayerId, string NextPlayerUsername);
+public sealed record RollPhaseCompletedEvent(Guid PlayerId, int DiceRoll);
+public sealed record PlayerTradePhaseCompletedEvent(
+    Guid Source,
+    Guid Target,
+    Dictionary<ResourceType, int> Offer);
+
+public sealed record BankTradeCompletedEvent(
+    Guid PlayerId,
+    Dictionary<ResourceType, int> Given,
+    Dictionary<ResourceType, int> Received);
+
+public sealed record ExplorerCreatedEvent(Guid Id, AxialCoords NodeCoords);
+public sealed record ExplorerMovedEvent(Guid Id, List<AxialCoords> Route);
+public sealed record ExplorerConvertedToCampEvent(Guid Id, AxialCoords NodeCoords);
+public sealed record ProgressAdvancedEvent(Guid Id, ProgressType ProgressType);
+public sealed record WinnerCheckedEvent(Guid Id);

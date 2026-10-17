@@ -19,6 +19,33 @@ class GameHub : Hub
         _playerService = playerService;
     }
 
+    public async Task StartGame(string code)
+    {
+        var session = _store.GetSession(code);
+        if (session == null)
+        {
+            _logger.LogCritical($"Failed to start game: session with id {code} doesn`t exist");
+            throw new HubException("SessionId doesn`t exist");
+        }
+
+        var player = session.GetPlayers()
+                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
+                    ?? throw new HubException("Player doesn't exist");
+
+        var result = session.StartGame();
+        if (!result)
+        {
+            _logger.LogCritical($"Failed to start game in session {code}");
+            throw new HubException("Failed to start game");
+        }
+
+        await Clients.Group(code).SendAsync("GameStarted", new
+        {
+            session.GetGameState().CurrentPlayerId,
+            CurrentPhase = session.GetGameState().Phase
+        });
+    }
+
     public async Task<string> CreateSession()
     {
         var session = _store.CreateSession();
@@ -230,7 +257,7 @@ class GameHub : Hub
         _playerService.AddResources(session, targetPlayerIdOrBank, offer);
         _playerService.SpendResources(session, player.Id, offer);
 
-        await Clients.Group(code).SendAsync("TradePhaseCompleted", new
+        await Clients.Group(code).SendAsync("PlayerTradePhaseCompleted", new
         {
             Source = player.Id,
             target = targetPlayerIdOrBank,
@@ -336,7 +363,7 @@ class GameHub : Hub
         var result = _playerService.CreateExplorer(session, player.Id, nodeCoords);
         if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
 
-        await Clients.Group(code).SendAsync("ExplorerBuilt", new { player.Id, nodeCoords });
+        await Clients.Group(code).SendAsync("ExplorerCreated", new { player.Id, nodeCoords });
     }
 
     public async Task MoveExplorer(string code, List<AxialCoords> route)
@@ -415,7 +442,7 @@ class GameHub : Hub
 
         if (isWinner)
         {
-            await Clients.Group(code).SendAsync("PlayerWon", new { player.Id });
+            await Clients.Group(code).SendAsync("WinnerChecked", new { player.Id });
         }
     }
 
