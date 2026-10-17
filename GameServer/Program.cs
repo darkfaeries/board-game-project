@@ -39,9 +39,8 @@ builder.Services.AddSingleton<IGameStore, GameStore>();
 builder.Services.AddSingleton<ConnectionManager>();
 builder.Services.AddSingleton<IBoardFactory>(serviceProvider =>
 {
-    var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
     var mapsPath = System.IO.Path.Combine(
-        environment.ContentRootPath, "GameFiles", "Maps");
+        AppContext.BaseDirectory, "GameFiles", "Maps");
     var logger = serviceProvider.GetRequiredService<ILogger<BoardFactory>>();
     return new BoardFactory(mapsPath, logger);
 });
