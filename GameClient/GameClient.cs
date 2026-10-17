@@ -1,21 +1,24 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
+using System.Net.Http;
 using System.Text.Json;
 
 namespace GameClient;
 
-public class GameClient
+public class GameClient : IAsyncDisposable
 {
     private readonly string _baseUrl;
     private readonly ILogger<GameClient> _logger;
     private HubConnection? _hub;
+    private bool _hasJoinedSession;
 
     public string? GameCode { get; private set; }
     public int PlayerCount { get; private set; }
     public bool IsConnected => _hub?.State == HubConnectionState.Connected;
 
     public event Action<int>? PlayerCountChanged;
+    public event Action<List<PlayerDto>>? PlayerListChanged;
     public event Action<GameStartedEvent>? GameStarted;
     public event Action<TurnChangedEvent>? TurnChanged;
     public event Action<RollPhaseCompletedEvent>? RollPhaseCompleted;
@@ -42,6 +45,7 @@ public class GameClient
 
             var code = await _hub!.InvokeAsync<string>("CreateSession");
             GameCode = code;
+            _hasJoinedSession = false;
             return (true, null);
         }
         catch (Exception ex)
@@ -53,32 +57,36 @@ public class GameClient
     public Task<(bool Ok, string? Error)> StartGameAsync() =>
         InvokeGameMethodAsync("StartGame", false);
 
-    public async Task<(bool Ok, string? Error)> ConnectAsync(string gameCode)
+    public async Task<(bool IsSuccess, string? Error)> ConnectAsync(string gameCode, string username = "Player")
     {
         if (string.IsNullOrWhiteSpace(gameCode))
         {
-            ClearSession();
             return (false, "Game code cannot be empty.");
         }
-
-        //пока нет авторизации будет рандомыш
-        var tempname = $"Player_{Guid.NewGuid().ToString().Substring(0, 4)}";
 
         try
         {
             await EnsureConnectedAsync();
 
             var code = gameCode.Trim().ToUpperInvariant();
-            var players = await _hub!.InvokeAsync<int>("JoinSession", code, tempname);
+            var players = await _hub!.InvokeAsync<int>("JoinSession", code, username);
 
             GameCode = code;
             PlayerCount = players;
+            _hasJoinedSession = true;
             return (true, null);
         }
         catch (Exception ex)
         {
             return Fail(ex);
         }
+    }
+
+    // Совместимость с UI клиента: создание сессии возвращает её код в Data.
+    public async Task<(bool IsSuccess, string? Data)> CreateAsync()
+    {
+        var result = await CreateSessionAsync();
+        return (result.Ok, result.Ok ? GameCode : result.Error);
     }
 
     public Task<(bool Ok, string? Error)> LeaveSessionAsync() =>
@@ -121,6 +129,8 @@ public class GameClient
 
         try
         {
+            if (_hasJoinedSession && !string.IsNullOrWhiteSpace(GameCode) && IsConnected)
+                await _hub!.InvokeAsync("LeaveSession", GameCode);
             await _hub.StopAsync();
         }
         catch (Exception ex)
@@ -143,16 +153,40 @@ public class GameClient
         if (_hub is not null)
             await DisconnectAsync();
 
+        var hubUrl = _baseUrl.EndsWith("/gamehub", StringComparison.OrdinalIgnoreCase)
+            ? _baseUrl
+            : $"{_baseUrl}/gamehub";
+
         _hub = new HubConnectionBuilder()
-            .WithUrl($"{_baseUrl}/gamehub")
+            .WithUrl(hubUrl, options =>
+            {
+                options.HttpMessageHandlerFactory = handler =>
+                {
+                    if (handler is HttpClientHandler httpClientHandler)
+                        httpClientHandler.UseProxy = false;
+                    return handler;
+                };
+            })
             .WithAutomaticReconnect()
             .Build();
 
         _hub.On<JsonElement>("PlayerCountChanged", payload =>
         {
-            PlayerCount = payload.ValueKind == JsonValueKind.Array
-                ? payload.GetArrayLength()
-                : payload.GetInt32();
+            if (payload.ValueKind == JsonValueKind.Array)
+            {
+                var players = payload.Deserialize<List<PlayerDto>>() ?? new List<PlayerDto>();
+                PlayerCount = players.Count;
+                PlayerListChanged?.Invoke(players);
+            }
+            else if (payload.ValueKind == JsonValueKind.Number && payload.TryGetInt32(out var count))
+            {
+                PlayerCount = count;
+            }
+            else
+            {
+                _logger.LogWarning("Received an unsupported PlayerCountChanged payload.");
+                return;
+            }
             PlayerCountChanged?.Invoke(PlayerCount);
         });
         _hub.On<GameStartedEvent>("GameStarted", value => GameStarted?.Invoke(value));
@@ -224,9 +258,13 @@ public class GameClient
     {
         GameCode = null;
         PlayerCount = 0;
+        _hasJoinedSession = false;
     }
+
+    public async ValueTask DisposeAsync() => await DisconnectAsync();
 }
 
+public sealed record PlayerDto(Guid Id, string Name);
 public sealed record GameStartedEvent(Guid? CurrentPlayerId, TurnPhase CurrentPhase);
 public sealed record TurnChangedEvent(Guid NextPlayerId, string NextPlayerUsername);
 public sealed record RollPhaseCompletedEvent(Guid PlayerId, int DiceRoll);
