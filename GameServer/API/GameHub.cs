@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 
 namespace GameServer;
 
@@ -201,10 +202,9 @@ class GameHub : Hub
         if (diceRoll == 7)
         {
             // TODO: SomeService.HadleSeven();
-            return;
         }
-
-        _playerService.DistributeHexResources(session, diceRoll);
+        else 
+            _playerService.DistributeHexResources(session, diceRoll);
 
         await Clients.Group(code).SendAsync("RollPhaseCompleted", new
         {
@@ -268,8 +268,7 @@ class GameHub : Hub
     public async Task TradeWithBank(
         string code,
         Dictionary<ResourceType, int> resourcesToGive,
-        ResourceType resourceToGet,
-        int amountToGet
+        ResourceType resourceToGet
     )
     {
         var session = _store.GetSession(code);
@@ -290,7 +289,7 @@ class GameHub : Hub
                     ?? throw new HubException("Player not found");
         EnsureCurrentPlayer(session, player);
 
-        var reward = new Dictionary<ResourceType, int> { { resourceToGet, amountToGet } };
+        var reward = new Dictionary<ResourceType, int> { { resourceToGet, 1 } };
         try
         {
             _playerService.TradeWithBank(session, player.Id, resourcesToGive, resourceToGet);
@@ -456,6 +455,13 @@ class GameHub : Hub
                 .FirstOrDefault(p => p.ConnectionId == connectionId);
 
             if (player is null) continue;
+
+            var returnColorResult = session.ReturnPlayerColor(player.Color);
+            if (!returnColorResult)
+            {
+                _logger.LogWarning($"Failed to return color {player.Color} for player {player.Name}");
+                throw new HubException("Failed to return player color");
+            }
 
             session.LeaveSession(player.Id);
             await Groups.RemoveFromGroupAsync(connectionId, code);
