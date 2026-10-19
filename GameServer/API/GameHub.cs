@@ -9,15 +9,46 @@ class GameHub : Hub
     private readonly IGameStore _store;
     private readonly ITurnService _turnService;
     private readonly IPlayerService _playerService;
+    private readonly IGameService _gameService;
 
     public GameHub(
-        ILogger<GameHub> logger, IGameStore store, ITurnService turnService, IPlayerService playerService
+        ILogger<GameHub> logger, IGameStore store, 
+        ITurnService turnService, IPlayerService playerService,
+        IGameService gameService
         )
     {
         _logger = logger;
         _store = store;
         _turnService = turnService;
         _playerService = playerService;
+        _gameService = gameService;
+    }
+
+    public async Task StartGame(string code)
+    {
+        var session = _store.GetSession(code);
+        if (session == null)
+        {
+            _logger.LogCritical($"Failed to start game: session with id {code} doesn`t exist");
+            throw new HubException("SessionId doesn`t exist");
+        }
+
+        var player = session.GetPlayers()
+                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
+                    ?? throw new HubException("Player doesn't exist");
+
+        var result = _gameService.StartGame(session);
+        if (!result)
+        {
+            _logger.LogCritical($"Failed to start game in session {code}");
+            throw new HubException("Failed to start game");
+        }
+
+        await Clients.Group(code).SendAsync("GameStarted", new
+        {
+            session.GetGameState().CurrentPlayerId,
+            CurrentPhase = session.GetGameState().Phase
+        });
     }
 
     public async Task<string> CreateSession()
@@ -158,6 +189,7 @@ class GameHub : Hub
         var player = session.GetPlayers()
                     .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
                     ?? throw new HubException("Player doesn't exist");
+
         EnsureCurrentPlayer(session, player);
         if (playerId != player.Id)
         {
@@ -174,8 +206,23 @@ class GameHub : Hub
 
         if (diceRoll == 7)
         {
-            // TODO: SomeService.HadleSeven();
+            _gameService.OnSevenRolled(session);
+            await Clients.Group(code).SendAsync("SevenRolled", new
+            {
+                PlayerId = playerId,
+                DiceRoll = diceRoll,
+                PendingDecisions = session.GetGameState().PendingDecisions
+                    .Select(d => new
+                    {
+                        d.PlayerId,
+                        DecisionType = d.GetType().Name,
+                        RequiredCount = d is DiscardResourcesDecision discard
+                            ? discard.RequiredCount
+                            : 0
+                    })
+            });
         }
+        
         else 
             _playerService.DistributeHexResources(session, diceRoll);
 
@@ -183,6 +230,39 @@ class GameHub : Hub
         {
             PlayerId = playerId,
             DiceRoll = diceRoll,
+        });
+    }
+
+    public async Task DiscardResourcesDecision(
+        string code, Dictionary<ResourceType, int> selectedResources)
+    {
+        var session = _store.GetSession(code);
+        if (session == null)
+        {
+            _logger.LogCritical($"Failed to execute Discard Resources : session with id {code} doesn`t exist");
+            throw new HubException("SessionId doesn`t exist");
+        }
+
+        var player = session.GetPlayers()
+                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
+                    ?? throw new HubException("Player doesn't exist");
+
+        if (session.GetGameState().PendingDecisions.FirstOrDefault(d => d.PlayerId == player.Id) == null)
+        {
+            _logger.LogWarning($"Player {player.Id} attempted to discard resources without a pending decision.");
+            throw new HubException("You do not have a pending decision to discard resources.");
+        }
+
+        var result = _gameService.SubmitDiscardResources(session, player.Id, selectedResources);
+        if (!result)
+        {
+            _logger.LogWarning($"Failed to submit discard resources for player {player.Id}.");
+            throw new HubException($"Failed to submit discard resources for player {player.Id}.");
+        }
+
+        await Clients.Group(code).SendAsync("DiscardResourcesSubmitted", new
+        {
+            PlayerId = player.Id
         });
     }
 
