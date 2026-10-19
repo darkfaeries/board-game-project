@@ -115,6 +115,30 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
         return true;
     } 
 
+    public bool InitializeSetup()
+    {
+        if (gameState.Status != GameStatus.WaitingForPlayers)
+        {
+            logger.LogWarning($"Cannot start game in session {Code}: game is already started");
+            return false;
+        }
+        if (gameState.Players.Count < GameConstants.MinPlayers)
+        {
+            logger.LogWarning($"Cannot start game in session {Code}: not enough players");
+            return false;
+        }
+        if (gameState.Players.Count > GameConstants.MaxPlayers)
+        {
+            logger.LogWarning($"Cannot start game in session {Code}: too many players");
+            return false;
+        }
+
+        gameState.Status = GameStatus.Setup;
+        gameState.CurrentPlayerId = gameState.Players[0].Id;
+        gameState.Phase = TurnPhase.Roll;
+        return true;
+    }
+
     public Player[] GetPlayers() => gameState.Players.ToArray();
     public GameState GetGameState() => gameState;
 }
