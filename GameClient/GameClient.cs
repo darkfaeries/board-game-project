@@ -18,6 +18,8 @@ public class GameClient
     public event Action<int>? PlayerCountChanged;
     public event Action<GameStartedEvent>? GameStarted;
     public event Action<TurnChangedEvent>? TurnChanged;
+    public event Action<SevenRolledEvent>? SevenRolled;
+    public event Action<DiscardResourcesSubmittedEvent>? DiscardResourcesSubmitted;
     public event Action<RollPhaseCompletedEvent>? RollPhaseCompleted;
     public event Action<PlayerTradePhaseCompletedEvent>? PlayerTradePhaseCompleted;
     public event Action<BankTradeCompletedEvent>? BankTradeCompleted;
@@ -86,6 +88,10 @@ public class GameClient
 
     public Task<(bool Ok, string? Error)> RollPhaseAsync(Guid playerId) =>
         InvokeGameMethodAsync("RollPhase", false, playerId);
+
+    public Task<(bool Ok, string? Error)> DiscardResourcesDecisionAsync(
+        Guid playerId, Dictionary<ResourceType, int> selectedResources) =>
+        InvokeGameMethodAsync("DiscardResourcesDecision", false, selectedResources);
 
     public Task<(bool Ok, string? Error)> TradeWithPlayerAsync(
         Guid targetPlayerId, Dictionary<ResourceType, int> offer) =>
@@ -157,6 +163,10 @@ public class GameClient
         });
         _hub.On<GameStartedEvent>("GameStarted", value => GameStarted?.Invoke(value));
         _hub.On<TurnChangedEvent>("TurnChanged", value => TurnChanged?.Invoke(value));
+        _hub.On<SevenRolledEvent>("SevenRolled", value => SevenRolled?.Invoke(value));
+        _hub.On<DiscardResourcesSubmittedEvent>(
+            "DiscardResourcesSubmitted", 
+            value => DiscardResourcesSubmitted?.Invoke(value));
         _hub.On<RollPhaseCompletedEvent>("RollPhaseCompleted", value => RollPhaseCompleted?.Invoke(value));
         _hub.On<PlayerTradePhaseCompletedEvent>(
             "PlayerTradePhaseCompleted",
@@ -245,3 +255,6 @@ public sealed record ExplorerMovedEvent(Guid Id, List<AxialCoords> Route);
 public sealed record ExplorerConvertedToCampEvent(Guid Id, AxialCoords NodeCoords);
 public sealed record ProgressAdvancedEvent(Guid Id, ProgressType ProgressType);
 public sealed record WinnerCheckedEvent(Guid Id);
+public sealed record SevenRolledEvent(Guid Id, int DiceRoll, List<PendingDecisionEvent> PendingDecisions);
+public sealed record PendingDecisionEvent(Guid PlayerId, string DecisionType, int RequiredCount);
+public sealed record DiscardResourcesSubmittedEvent(Guid Id);
