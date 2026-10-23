@@ -101,7 +101,7 @@ public class GameService : IGameService
 
             state.SetupPlacementsCompleted++;
             var count = state.SetupPlayerOrder.Length;
-            if (state.SetupPlacementsCompleted == count * 3)
+            if (state.SetupPlacementsCompleted == count * GameConstants.InitialCampsCount)
             {
                 state.Status = GameStatus.Playing;
                 state.Phase = TurnPhase.Roll;
