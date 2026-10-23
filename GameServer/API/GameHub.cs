@@ -1,11 +1,17 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 
-namespace GameServer;
+using GameServer;
+
+namespace WebAPI.API;
 
 class GameHub : Hub
 {
     ILogger<GameHub> _logger;
+    private static readonly ConcurrentDictionary<string, Player> _players = new();
     private readonly IGameStore _store;
     private readonly ITurnService _turnService;
     private readonly IPlayerService _playerService;
@@ -20,6 +26,26 @@ class GameHub : Hub
         _playerService = playerService;
     }
 
+    public override async Task OnConnectedAsync()
+    {
+        var userIdString = Context?.User?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+        if (Guid.TryParse(userIdString, out var userId))
+        {
+            var username = Context?.User?.FindFirstValue(ClaimTypes.Name);
+            if (username == null)
+            {
+                _logger.LogWarning("Username claim is missing for user {UserId}.", userId);
+                throw new HubException("Username claim is missing.");
+            }
+
+            var player = new Player(userId, username);
+            _players[Context!.ConnectionId] = player;
+        }
+
+        await base.OnConnectedAsync();
+    }
+
     public async Task StartGame(string code)
     {
         var session = _store.GetSession(code);
@@ -29,9 +55,11 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player doesn't exist");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
 
         var result = session.StartGame();
         if (!result)
@@ -64,9 +92,11 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player doesn't exist");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
 
         var turnResult = _turnService.EndTurn(session, player.Id);
 
@@ -89,7 +119,7 @@ class GameHub : Hub
         });
     }
 
-    public async Task<int> JoinSession(string code, string username = "")
+    public async Task<int> JoinSession(string code)
     {
         var session = _store.GetSession(code);
         if (session == null)
@@ -98,17 +128,20 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player with connection ID {Context.ConnectionId} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
+
         var color = session.GivePlayerColor();
         if (color == null)
         {
-            _logger.LogCritical($"Failed to join session: no available colors for player {username}");
+            _logger.LogCritical($"Failed to join session: no available colors for player {player.Name}");
             throw new HubException("No available colors for player");
         }
 
-        var player = new Player(username, color.Value)
-        {
-            ConnectionId = Context.ConnectionId,
-        };
+        player.Color = color.Value;
 
         var result = session.JoinSession(player);
         if (!result)
@@ -134,9 +167,11 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player doesn't exist");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
 
         var result = session.LeaveSession(player.Id);
         if (!result)
@@ -182,9 +217,11 @@ class GameHub : Hub
             throw new HubException($"Cannot roll dice in phase {session.GetGameState().Phase}");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player doesn't exist");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
         EnsureCurrentPlayer(session, player);
         if (playerId != player.Id)
         {
@@ -203,7 +240,7 @@ class GameHub : Hub
         {
             // TODO: SomeService.HadleSeven();
         }
-        else 
+        else
             _playerService.DistributeHexResources(session, diceRoll);
 
         await Clients.Group(code).SendAsync("RollPhaseCompleted", new
@@ -231,9 +268,11 @@ class GameHub : Hub
             throw new HubException($"Cannot trade in phase {session.GetGameState().Phase}");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player doesn't exist");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
         EnsureCurrentPlayer(session, player);
 
         if (targetPlayerIdOrBank == player.Id)
@@ -284,9 +323,11 @@ class GameHub : Hub
             throw new HubException($"Cannot trade in phase {session.GetGameState().Phase}");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player not found");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
         EnsureCurrentPlayer(session, player);
 
         var reward = new Dictionary<ResourceType, int> { { resourceToGet, 1 } };
@@ -328,9 +369,11 @@ class GameHub : Hub
             throw new HubException($"Cannot build camp in phase {session.GetGameState().Phase}");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player not found");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
         EnsureCurrentPlayer(session, player);
 
         var result = _playerService.ConvertExplorerToCamp(session, player.Id, nodeCoords);
@@ -354,9 +397,11 @@ class GameHub : Hub
             throw new HubException($"Cannot build explorer in phase {session.GetGameState().Phase}");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player not found");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
         EnsureCurrentPlayer(session, player);
 
         var result = _playerService.CreateExplorer(session, player.Id, nodeCoords);
@@ -380,9 +425,11 @@ class GameHub : Hub
             throw new HubException($"Cannot move explorer in phase {session.GetGameState().Phase}");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player not found");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
         EnsureCurrentPlayer(session, player);
 
         if (route == null || route.Count != 2)
@@ -412,9 +459,11 @@ class GameHub : Hub
             throw new HubException($"Cannot advance progress in phase {session.GetGameState().Phase}");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player not found");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
         EnsureCurrentPlayer(session, player);
 
         var result = _playerService.AdvanceProgress(session, player.Id, progressType);
@@ -432,9 +481,11 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player not found");
+        if (!_players.TryGetValue(Context.ConnectionId, out var player))
+        {
+            _logger.LogWarning($"Player {player!.Id} not found in the player list.");
+            throw new HubException("Player not found.");
+        }
         EnsureCurrentPlayer(session, player);
 
         var isWinner = _playerService.CheckWinCondition(session, player.Id);
@@ -449,35 +500,39 @@ class GameHub : Hub
     {
         var connectionId = Context.ConnectionId;
 
-        foreach (var (code, session) in _store.GetSessions())
+        if (_players.TryRemove(connectionId, out var player))
         {
-            var player = session.GetPlayers()
-                .FirstOrDefault(p => p.ConnectionId == connectionId);
-
-            if (player is null) continue;
-
-            var returnColorResult = session.ReturnPlayerColor(player.Color);
-            if (!returnColorResult)
+            foreach (var (code, session) in _store.GetSessions())
             {
-                _logger.LogWarning($"Failed to return color {player.Color} for player {player.Name}");
-                throw new HubException("Failed to return player color");
-            }
-
-            session.LeaveSession(player.Id);
-            await Groups.RemoveFromGroupAsync(connectionId, code);
-            await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers().Count());
-
-            if (session.GetPlayers().Count() == 0)
-            {
-                if (!_store.RemoveSession(code))
+                var returnColorResult = session.ReturnPlayerColor(player.Color);
+                if (!returnColorResult)
                 {
-                    _logger.LogCritical($"Failed to delete session: session {code} doesn`t exist");
-                    throw new HubException("Session doesn`t exist");
+                    _logger.LogWarning($"Failed to return color {player.Color} for player {player.Name}");
+                    throw new HubException("Failed to return player color");
                 }
-            }
 
-            break;
+                session.LeaveSession(player.Id);
+                await Groups.RemoveFromGroupAsync(connectionId, code);
+                await Clients.Group(code).SendAsync("PlayerCountChanged", session.GetPlayers().Count());
+
+                if (session.GetPlayers().Count() == 0)
+                {
+                    if (!_store.RemoveSession(code))
+                    {
+                        _logger.LogCritical($"Failed to delete session: session {code} doesn`t exist");
+                        throw new HubException("Session doesn`t exist");
+                    }
+                }
+
+                break;
+            }
         }
+        else
+        {
+            _logger.LogWarning($"Player with connection ID {connectionId} was not found in the player list.");
+            throw new HubException("Player not found in the player list.");
+        }
+
 
         await base.OnDisconnectedAsync(exception);
     }
