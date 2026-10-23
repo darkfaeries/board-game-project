@@ -1,0 +1,120 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+//using GameDomain;
+
+namespace GameServer;
+
+public class GameSession(ILogger<GameSession> logger, GameState gameState) : Session
+{
+    public string Code { get; } = Guid.NewGuid().ToString("N")[..6].ToUpper();
+
+    public bool JoinSession(Player new_player)
+    {
+        if (gameState.Players.Any(p => p.Name.Equals(new_player.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            logger.LogWarning(
+                $"Failed to add new player to session {Code}: player {new_player.Name} with username {new_player.Name} already exists"
+                );
+            return false;
+        }
+
+        if (gameState.Players.Any(p => p.Id == new_player.Id))
+        {
+            logger.LogWarning(
+                $"Failed to add new player to session {Code}: player {new_player.Name} with id {new_player.Id} already exists"
+                );
+            return false;
+        }
+
+        gameState.Players.Add(new_player);
+        return true;
+    }
+
+    public bool LeaveSession(Guid id)
+    {
+        if (!gameState.Players.Any(p => p.Id == id))
+        {
+            logger.LogWarning(
+                $"Failed to remove player from session {Code}: player with id {id} doesn`t exists"
+                );
+            return false;
+        }
+
+        gameState.Players.RemoveAll(p => p.Id == id);
+
+        if (gameState.Players.Count == 0)
+        {
+            gameState.CurrentPlayerId = null;
+            return true;
+        }
+
+        return true;
+    }
+
+    public void NextPlayer()
+    {
+        if (gameState.Players.Count == 0) return;
+
+        var index = gameState.Players.FindIndex(p => p.Id == gameState.CurrentPlayerId);
+        gameState.CurrentPlayerId = gameState.Players[(index + 1) % gameState.Players.Count].Id;
+
+        if (gameState.CurrentPlayerId == gameState.Players[0].Id)
+        {
+            gameState.TurnNumber++;
+            logger.LogInformation($"Turn {gameState.TurnNumber} started.");
+        }
+    }
+
+    public TurnPhase NextPhase()
+    {
+        gameState.Phase = gameState.Phase switch
+        {
+            TurnPhase.Roll => TurnPhase.Trade,
+            TurnPhase.Trade => TurnPhase.Actions,
+            TurnPhase.Actions => TurnPhase.Roll,
+            _ => throw new InvalidOperationException($"Invalid game phase: {gameState.Phase}")
+        };
+        return gameState.Phase;
+    }
+
+    public int RollDice()
+    {
+        if (gameState.Phase != TurnPhase.Roll)
+        {
+            logger.LogWarning($"Cannot roll dice in phase {gameState.Phase}");
+            return -1;
+        }
+
+        var diceRoll = Random.Shared.Next(1, 7) + Random.Shared.Next(1, 7);
+        logger.LogInformation($"Player {gameState.CurrentPlayerId} rolled a {diceRoll}");
+        return diceRoll;
+    }
+
+    public PlayerColor? GivePlayerColor()
+    {
+        var availableColor = gameState.AvailableColors.FirstOrDefault(c => c.Value > 0);
+        if (availableColor.Value == 0)
+        {
+            logger.LogWarning($"No available colors to give to player {gameState.CurrentPlayerId}");
+            return null;
+        }
+        gameState.AvailableColors[availableColor.Key] -= 1;
+        return availableColor.Key;
+    }
+
+    public bool ReturnPlayerColor(PlayerColor color)
+    {
+        if (gameState.AvailableColors.ContainsKey(color))
+            gameState.AvailableColors[color] += 1;
+        
+        else
+        {
+            logger.LogWarning($"Attempted to return an invalid color {color} to the available colors");
+            return false;
+        }
+        return true;
+    } 
+
+    public Player[] GetPlayers() => gameState.Players.ToArray();
+    public GameState GetGameState() => gameState;
+}

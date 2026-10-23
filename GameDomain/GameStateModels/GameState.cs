@@ -9,11 +9,23 @@ public class GameState
     public GameStatus Status { get; set; }
     public TurnPhase Phase { get; set; }
     public Guid? CurrentPlayerId { get; set; }
-    public int TurnNumber { get; set; }
-    public Player[] Players { get; set; } = Array.Empty<Player>();
-    public BoardState Board { get; set; } = new BoardState();
+    public int TurnNumber { get; set; } = 1;
+    public List<Player> Players { get; set; } = new();
+    public Dictionary<PlayerColor, int> AvailableColors { get; set; } = new()
+    {
+        { PlayerColor.Red, 1 },
+        { PlayerColor.Blue, 1 },
+        { PlayerColor.White, 1 },
+        { PlayerColor.Orange, 1 }
+    };
+    public BoardState Board { get; }
     public VictoryState Victory { get; set; } = new VictoryState();
     public PendingDecision[] PendingDecisions { get; set; } = Array.Empty<PendingDecision>();
+
+    public GameState(BoardState board)
+    {
+        Board = board;
+    }
 
     public Player GetCurrentPlayer()
     {
@@ -28,4 +40,7 @@ public class GameState
         // The diagram does not specify the scoring rules.
         throw new NotImplementedException();
     }
+
+    public Player? GetPlayer(Guid playerId) =>
+        Players.FirstOrDefault(player => player.Id == playerId);
 }

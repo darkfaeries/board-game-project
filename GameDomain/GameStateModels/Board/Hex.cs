@@ -6,14 +6,24 @@ using System.Linq;
 
 public class Hex
 {
-    public Guid Id { get; }
+    public AxialCoords Coords { get; }
     public TerrainType Terrain { get; }
     public int NumberToken { get; }
     public Region Region { get; }
     public bool IsDesertified { get; set;}
 
+    public Hex(AxialCoords coords, TerrainType terrain, int number, Region region)
+    {
+        if (coords.IsNode()) throw new Exception("node coords used for hex constructor");
+        Coords = coords;
+        Terrain = terrain;
+        NumberToken = number;
+        Region = region;
+        IsDesertified = false;
+    }
+
     public ResourceType GetProducedResource()
     {
-        return (Resource)TerrainType;
+        return (ResourceType)Terrain;
     }
 }
