@@ -52,7 +52,7 @@ public class BoardService : IBoardService
             if (state.Status != GameStatus.Setup || state.CurrentPlayerId != playerId || state.GetPlayer(playerId) == null ||
                 nodeCoords == null || !state.Board.Nodes.TryGetValue(nodeCoords, out var node) ||
                 !node.IsStartSpace || state.Board.IsOccupied(nodeCoords) ||
-                state.Board.CampPositions.Values.Count(id => id == playerId) >= 3)
+                state.Board.CampPositions.Values.Count(id => id == playerId) >= GameConstants.InitialCampsCount)
                 return false;
 
             state.Board.CampPositions.Add(nodeCoords, playerId);
