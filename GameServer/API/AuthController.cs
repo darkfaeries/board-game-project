@@ -3,6 +3,9 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.AspNetCore.Identity;
+
+using GameServer;
 
 public record AuthRequestDto(string Username, string Password);
 
@@ -11,40 +14,52 @@ public record AuthRequestDto(string Username, string Password);
 public class AuthController : ControllerBase
 {
     private readonly IConfiguration _configuration;
+    private readonly IRepository<User> _userRepo;
+    private readonly PasswordHasher<User> _passwordHasher = new();
 
-    public AuthController(IConfiguration configuration)
+    public AuthController(IConfiguration configuration, IRepository<User> userRepo)
     {
         _configuration = configuration;
+        _userRepo = userRepo;
     }
 
     [HttpPost("register")]
     public async Task<IActionResult> Register(AuthRequestDto request)
     {
-        // 1. Здесь работаешь со своей сущностью Player (проверяешь бд, создаешь игрока)
-        // var player = new Player { Username = request.Username, ... };
-        // _db.Players.Add(player);
-        // await _db.SaveChangesAsync();
+        var existingUser = _userRepo.Get(request.Username);
+        if (existingUser != null)
+        {
+            return BadRequest("Username already exists.");
+        }
 
-        Guid playerId = Guid.NewGuid(); 
+        var user = new User { Username = request.Username };
+        user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
 
-        var token = GenerateJwtToken(playerId.ToString(), request.Username);
+        _userRepo.Create(user);
 
-        return Ok(new { Token = token });
+        var token = GenerateJwtToken(user.Id.ToString(), request.Username);
+        return Ok(token);
     }
 
     [HttpPost("login")]
     public async Task<IActionResult> Login(AuthRequestDto request)
     {
-        // 1. Проверяешь существование игрока в бд
-        // var player = await _db.Players.FirstOrDefaultAsync(p => p.Username == request.Username);
-        // if (player == null) return Unauthorized();
+        var user = _userRepo.Get(request.Username);
+        if (user == null) return Unauthorized("Invalid username.");
 
-        Guid playerId = Guid.NewGuid(); // ID найденного игрока
+        if (string.IsNullOrEmpty(user.PasswordHash))
+        {
+            return Unauthorized("User does not have a password set.");
+        }
 
-        // 2. Генерируем токен
-        var token = GenerateJwtToken(playerId.ToString(), request.Username);
+        var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+        if (result == PasswordVerificationResult.Failed)
+        {
+            return Unauthorized("Invalid password.");
+        }
 
-        return Ok(new { Token = token });
+        var token = GenerateJwtToken(user.Id.ToString(), request.Username);
+        return Ok(token);
     }
 
     private string GenerateJwtToken(string id, string username)
@@ -58,7 +73,7 @@ public class AuthController : ControllerBase
             new Claim(JwtRegisteredClaimNames.Sub, id),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(ClaimTypes.Role, "User"),
-            new Claim(ClaimTypes.Name, username) 
+            new Claim(ClaimTypes.Name, username)
         };
 
         var token = new JwtSecurityToken(
