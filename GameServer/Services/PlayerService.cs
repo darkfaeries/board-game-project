@@ -28,16 +28,16 @@ public class PlayerService : IPlayerService
             var resourceType = hex.GetProducedResource();
             var adjacentNodes = hex.Coords.HexGetNeighbors();
 
+            var campPositions = state.Board.CampPositions;
+
             foreach (var nodeCoords in adjacentNodes)
             {
-                foreach (var owner in state.Players)
+                if (campPositions.TryGetValue(nodeCoords, out var playerId))
                 {
-                    var campsAtNode = owner.CampPositions.Count(camp => camp.Equals(nodeCoords));
-                    if (campsAtNode == 0) continue;
-
-                    owner.Resources.Add(resourceType, campsAtNode);
-                    _logger.LogInformation(
-                        $"Added {campsAtNode} {resourceType} to player {owner.Id} from hex ({hex.Coords.q}, {hex.Coords.r}).");
+                    AddResources(session, playerId, new Dictionary<ResourceType, int>
+                    {
+                        [resourceType] = 1
+                    });
                 }
             }
         }
@@ -119,7 +119,11 @@ public class PlayerService : IPlayerService
             return (false, $"Player with id {playerId} not found.");
         }
 
-        if (!player.ExplorerPositions.Contains(nodeCoords))
+        var explorerPositions = state.Board.ExplorerPositions;
+
+        if (!explorerPositions.TryGetValue(nodeCoords, out var ownerId) ||
+            !playerId.Equals(ownerId)
+        )
         {
             _logger.LogWarning($"Player with ID {playerId} has no explorer at the selected node.");
             return (false, "The player has no explorer at the selected node.");
@@ -143,8 +147,8 @@ public class PlayerService : IPlayerService
             return (false, "The selected node has no tribe.");
         }
 
-        player.ExplorerPositions.Remove(nodeCoords);
-        player.CampPositions.Add(nodeCoords);
+        state.Board.ExplorerPositions.Remove(nodeCoords);
+        state.Board.CampPositions.Add(nodeCoords, playerId);
         player.TribesCollected.Add(node.Tribe.Value);
         node.HasTribeCounter = false;
         _logger.LogInformation(
@@ -169,7 +173,7 @@ public class PlayerService : IPlayerService
             return (false, $"Player with ID {playerId} cannot afford to build an explorer.");
         }
 
-        if (player.ExplorerPositions.Count >= 2)
+        if (state.Board.ExplorerPositions.Values.Count(ownerId => ownerId == playerId) == 2)
         {
             _logger.LogWarning($"Player with ID {playerId} already has two explorers.");
             return (false, "A player cannot have more than two explorers.");
@@ -187,8 +191,9 @@ public class PlayerService : IPlayerService
             return (false, "Node is already occupied.");
         }
 
-        if (!player.CampPositions.Any(camp =>
-                camp.NodeGetNodeNeighbors().Contains(nodeCoords)))
+        if (!(nodeCoords.NodeGetNodeNeighbors().Any(coord =>
+            state.Board.CampPositions.TryGetValue(coord, out var owner)
+            && owner.Equals(playerId))))
         {
             _logger.LogWarning(
                 $"Node with coordinates ({nodeCoords.q}, {nodeCoords.r}) is not adjacent to player {playerId} camp.");
@@ -196,7 +201,7 @@ public class PlayerService : IPlayerService
         }
 
         SpendResources(session, playerId, GameCosts.ExplorerCost);
-        player.ExplorerPositions.Add(nodeCoords);
+        state.Board.ExplorerPositions.Add(nodeCoords, playerId);
         _logger.LogInformation(
             $"Created explorer for player {playerId} at ({nodeCoords.q}, {nodeCoords.r}).");
         return (true, "Explorer created successfully.");
@@ -228,7 +233,8 @@ public class PlayerService : IPlayerService
 
         var sourceCoords = route[0];
         var targetCoords = route[^1];
-        if (!player.ExplorerPositions.Contains(sourceCoords))
+        if (!state.Board.ExplorerPositions.TryGetValue(sourceCoords, out var ownerId)
+            || !ownerId.Equals(playerId))
         {
             _logger.LogWarning($"Player with ID {playerId} has no explorer at the source node.");
             return (false, "The player has no explorer at the source node.");
@@ -280,8 +286,8 @@ public class PlayerService : IPlayerService
             explorationPath.ExplorationCounter = null;
         }
 
-        player.ExplorerPositions.Remove(sourceCoords);
-        player.ExplorerPositions.Add(targetCoords);
+        state.Board.ExplorerPositions.Remove(sourceCoords);
+        state.Board.ExplorerPositions.Add(targetCoords, playerId);
 
         _logger.LogInformation(
             $"Moved explorer for player {playerId} from ({sourceCoords.q}, {sourceCoords.r}) to ({targetCoords.q}, {targetCoords.r}).");

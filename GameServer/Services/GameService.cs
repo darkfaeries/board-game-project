@@ -4,12 +4,13 @@ public class GameService : IGameService
 {
     private readonly ILogger<GameService> _logger;
     private readonly IPlayerService _playerService;
+    private readonly IBoardService _boardService;
 
-    public GameService(ILogger<GameService> logger, IPlayerService playerService)
+    public GameService(ILogger<GameService> logger, IPlayerService playerService, IBoardService boardService)
     {
         _logger = logger;
         _playerService = playerService;
-        // _boardService = boardService;
+        _boardService = boardService;
     }
 
     public bool StartGame(GameSession session) 
@@ -25,11 +26,8 @@ public class GameService : IGameService
             _logger.LogError($"Failed to start game for session {session.Code}: initialization failed");
             return false;
         }
-        // boardService.SetupBoard(session); 
-        // boardService.PlayersSetup(session);
 
-        _logger.LogInformation($"Game started for session {session.Code}");
-        session.GetGameState().Status = GameStatus.Playing;
+        _boardService.SetupBoard(session, session.GetGameState().Players.Count);
 
         return true;
     }
@@ -90,5 +88,34 @@ public class GameService : IGameService
         state.PendingDecisions.Remove(decision);
             
         return true;
+    }
+
+    public bool SubmitInitialPlacement(GameSession session, Guid playerId, AxialCoords nodeCoords)
+    {
+        lock (session.Gate)
+        {
+            var state = session.GetGameState();
+            if (state.Status != GameStatus.Setup || state.CurrentPlayerId != playerId ||
+                !_boardService.PlaceInitialCamp(session, playerId, nodeCoords))
+                return false;
+
+            state.SetupPlacementsCompleted++;
+            var count = state.SetupPlayerOrder.Length;
+            if (state.SetupPlacementsCompleted == count * 3)
+            {
+                state.Status = GameStatus.Playing;
+                state.Phase = TurnPhase.Roll;
+                state.TurnNumber = 1;
+                state.CurrentPlayerId = state.SetupPlayerOrder[0];
+                return true;
+            }
+
+            var round = state.SetupPlacementsCompleted / count;
+            var offset = state.SetupPlacementsCompleted % count;
+            var index = round == 1 ? count - 1 - offset : offset;
+            state.CurrentPlayerId = state.SetupPlayerOrder[index];
+
+            return true;
+        }
     }
 }
