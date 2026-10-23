@@ -147,7 +147,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
             .Select(player => player.Id)
             .ToArray();
 
-        gameState.SetupPlacementsCompleted = 0;
+        gameState.CompletedSetupPlacementsCount = 0;
         gameState.CurrentPlayerId = gameState.SetupPlayerOrder[0];
         gameState.Status = GameStatus.Setup;
         gameState.Phase = TurnPhase.Actions;

@@ -22,7 +22,7 @@ public class GameState
     public VictoryState Victory { get; set; } = new VictoryState();
     public List<PendingDecision> PendingDecisions { get; set; } = new();
     public Guid[] SetupPlayerOrder { get; set; } = Array.Empty<Guid>();
-    public int SetupPlacementsCompleted { get; set; }
+    public int CompletedSetupPlacementsCount { get; set; }
 
     public GameState(BoardState board)
     {
