@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
+using GameServer;
 
-namespace GameServer;
+namespace WebAPI.API;
 
 class GameHub : Hub
 {
