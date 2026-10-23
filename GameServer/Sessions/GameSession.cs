@@ -137,7 +137,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
         var board = gameState.Board;
 
         if (board.CampPositions.Count != 0 ||  board.ExplorerPositions.Count != 0 ||
-            board.Nodes.Values.Count(node => node.IsStartSpace) < gameState.Players.Count * 3)
+            board.Nodes.Values.Count(node => node.IsStartSpace) < gameState.Players.Count * GameConstants.InitialCampsCount)
         {
             logger.LogWarning($"Cannot start game in session {Code}: board is not ready for setup");
             return false;
