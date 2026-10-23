@@ -660,18 +660,47 @@ class GameHub : Hub
             throw new HubException("It is not your turn.");
         }
     }
+    public async Task SubmitInitialPlacement(string code, AxialCoords nodeCoords)
+    {
+        var session = _store.GetSession(code);
+        if (session == null)
+        {
+            _logger.LogCritical($"Failed to submit initial placement : session with id {code} doesn`t exist");
+            throw new HubException("SessionId doesn`t exist");
+        }
+
+        var userId = GetUserIdFromContext();
+        var player = session.GetGameState().GetPlayer(userId)
+                     ?? throw new HubException("Player not found");
+        EnsureCurrentPlayer(session, player);
+
+        var result = _gameService.SubmitInitialPlacement(session, player.Id, nodeCoords);
+        if (!result)
+        {
+            _logger.LogWarning($"Failed initial placement for player {player.Id}.");
+            throw new HubException("Failed to submit initial placement.");
+        }
+
+        var state = session.GetGameState();
+
+        await Clients.Group(code).SendAsync("InitialPlacementSubmitted", new
+        {
+            PlayerId = player.Id,
+            NodeCoords = nodeCoords,
+            NextPlayerId = state.CurrentPlayerId,
+            Status = state.Status,
+            Phase = state.Phase
+        });
+    }
 
     private Guid GetUserIdFromContext()
     {
-        var userIdString = Context?.User?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        var userIdString = Context?.User?.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? Context?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
         if (Guid.TryParse(userIdString, out var userId))
-        {
             return userId;
-        }
-        else
-        {
-            _logger.LogWarning("Invalid or missing user ID in JWT claims.");
-            throw new HubException("Invalid or missing user ID in JWT claims.");
-        }
+
+        _logger.LogWarning("Invalid or missing user ID in JWT claims.");
+        throw new HubException("Invalid or missing user ID in JWT claims.");
     }
 }
