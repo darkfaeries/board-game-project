@@ -107,9 +107,9 @@ public class GameService : IGameService
                                    $"cannot place a camp at {nodeCoords}");
                 return false;
             }
-            state.SetupPlacementsCompleted++;
+            state.CompletedSetupPlacementsCount++;
             var count = state.SetupPlayerOrder.Length;
-            if (state.SetupPlacementsCompleted == count * GameConstants.InitialCampsCount)
+            if (state.CompletedSetupPlacementsCount == count * GameConstants.InitialCampsCount)
             {
                 state.Status = GameStatus.Playing;
                 state.Phase = TurnPhase.Roll;
@@ -118,8 +118,8 @@ public class GameService : IGameService
                 return true;
             }
 
-            var round = state.SetupPlacementsCompleted / count;
-            var offset = state.SetupPlacementsCompleted % count;
+            var round = state.CompletedSetupPlacementsCount / count;
+            var offset = state.CompletedSetupPlacementsCount % count;
             var index = round == 1 ? count - 1 - offset : offset;
             state.CurrentPlayerId = state.SetupPlayerOrder[index];
 
