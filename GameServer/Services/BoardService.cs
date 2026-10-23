@@ -32,6 +32,7 @@ public class BoardService : IBoardService
 
             if (eurasiaHexes.Length == 0 || americaHexes.Length == 0)
             {
+                _logger.LogWarning("Invalid Board State: to place enemies, needed hexes from Eurasia and America.");
                 throw new InvalidOperationException(
                     "Invalid Board State: to place enemies, needed hexes from Eurasia and America.");
             }
@@ -39,8 +40,12 @@ public class BoardService : IBoardService
             board.NeanderthalPosition =
                 eurasiaHexes[Random.Shared.Next(eurasiaHexes.Length)].Coords;
 
+            _logger.LogInformation($"Neanderthal Position have been set: {board.NeanderthalPosition}");
+
             board.SabertoothTigerPosition =
                 americaHexes[Random.Shared.Next(americaHexes.Length)].Coords;
+
+            _logger.LogInformation($"Sabertooth Tiger Position have been set: {board.SabertoothTigerPosition}");
         }
     }
 
@@ -56,6 +61,9 @@ public class BoardService : IBoardService
                 return false;
 
             state.Board.CampPositions.Add(nodeCoords, playerId);
+
+            _logger.LogInformation($"Initial camp for player {playerId} placed on {nodeCoords}");
+
             return true;
         }
     }

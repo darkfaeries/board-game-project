@@ -13,14 +13,14 @@ public class GameService : IGameService
         _boardService = boardService;
     }
 
-    public bool StartGame(GameSession session) 
+    public bool StartGame(GameSession session)
     {
         if (session == null)
         {
             _logger.LogError("Failed to start game: session is null");
             return false;
         }
-        var result =  session.InitializeSetup();
+        var result = session.InitializeSetup();
         if (!result)
         {
             _logger.LogError($"Failed to start game for session {session.Code}: initialization failed");
@@ -86,7 +86,7 @@ public class GameService : IGameService
             selectedResources);
 
         state.PendingDecisions.Remove(decision);
-            
+
         return true;
     }
 
@@ -95,10 +95,18 @@ public class GameService : IGameService
         lock (session.Gate)
         {
             var state = session.GetGameState();
-            if (state.Status != GameStatus.Setup || state.CurrentPlayerId != playerId ||
-                !_boardService.PlaceInitialCamp(session, playerId, nodeCoords))
+            if (state.Status != GameStatus.Setup || state.CurrentPlayerId != playerId)
+            {
+                _logger.LogWarning($"Initial placement rejected in session {session.Code} for player {playerId}: " +
+                                    $"status is {state.Status}, current player is {state.CurrentPlayerId}.");
                 return false;
-
+            }
+            if (!_boardService.PlaceInitialCamp(session, playerId, nodeCoords))
+            {
+                _logger.LogWarning($"Initial placement rejected in session {session.Code} for player {playerId}: " +
+                                   $"cannot place a camp at {nodeCoords}");
+                return false;
+            }
             state.SetupPlacementsCompleted++;
             var count = state.SetupPlayerOrder.Length;
             if (state.SetupPlacementsCompleted == count * GameConstants.InitialCampsCount)
