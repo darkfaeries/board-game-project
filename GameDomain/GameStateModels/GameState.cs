@@ -38,7 +38,8 @@ public class GameState
     public bool CalculateVictoryPoints(Guid playerId)
     {
         int victoryPoints = 0;
-        var player = GetPlayer(playerId)!;
+        var player = GetPlayer(playerId);
+        if (player == null) return false;
         victoryPoints += player.TribesCollected.Count;
         foreach (ProgressType progressType in Enum.GetValues<ProgressType>())
         {
