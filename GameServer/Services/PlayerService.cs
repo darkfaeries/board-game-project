@@ -169,7 +169,7 @@ public class PlayerService : IPlayerService
             return (false, $"Player with ID {playerId} cannot afford to build an explorer.");
         }
 
-        if (player.ExplorerPositions.Count >= 2)
+        if (player.ExplorerPositions.Count >= GameConstants.MaxExplorers)
         {
             _logger.LogWarning($"Player with ID {playerId} already has two explorers.");
             return (false, "A player cannot have more than two explorers.");
