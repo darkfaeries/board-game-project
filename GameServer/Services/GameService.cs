@@ -126,4 +126,98 @@ public class GameService : IGameService
             return true;
         }
     }
+
+    public void ConvertExplorerToCamp(GameSession session, Guid playerId, AxialCoords nodeCoords)
+    {
+        lock (session.Gate)
+        {
+            var state = session.GetGameState();
+            var player = state.GetPlayer(playerId);
+            if (player == null)
+            {
+                _logger.LogWarning($"Player with ID {playerId} not found.");
+                throw new GameRuleException("Player not found.");
+            }
+
+            if (!_playerService.CanBuildCamp(player))
+            {
+                _logger.LogWarning($"Player with ID {playerId} cannot afford to build a camp.");
+                throw new GameRuleException("The player cannot afford to build a camp.");
+            }
+
+            var tribe = _boardService.PlaceCamp(session, playerId, nodeCoords);
+
+            player.TribesCollected.Add(tribe);
+            _playerService.SpendResources(session, playerId, GameCosts.CampCost);
+
+            _logger.LogInformation(
+                $"Converted explorer to camp for player {playerId} at ({nodeCoords.q}, {nodeCoords.r}).");
+        }
+    }
+
+    public void CreateExplorer(GameSession session, Guid playerId, AxialCoords nodeCoords)
+    {
+        lock (session.Gate)
+        {
+            var state = session.GetGameState();
+            var player = state.GetPlayer(playerId);
+            if (player == null)
+            {
+                _logger.LogWarning($"Player with ID {playerId} not found.");
+                throw new GameRuleException("Player not found.");
+            }
+
+            if (!_playerService.CanCreateExplorer(player))
+            {
+                _logger.LogWarning($"Player with ID {playerId} cannot afford to build an explorer.");
+                throw new GameRuleException("Player cannot afford to build an explorer.");
+            }
+
+            _boardService.PlaceExplorer(session, playerId, nodeCoords);
+            _playerService.SpendResources(session, playerId, GameCosts.ExplorerCost);
+        }
+    }
+
+    public void MoveExplorer(GameSession session, Guid playerId, List<AxialCoords> route
+        )
+    {
+        lock (session.Gate)
+        {
+            var state = session.GetGameState();
+            var player = state.GetPlayer(playerId);
+            if (player == null)
+            {
+                _logger.LogWarning($"Player with ID {playerId} not found.");
+                throw new GameRuleException("Player not found.");
+            }
+
+            if (route == null || route.Count < 2 || route.Any(coords => coords == null))
+            {
+                _logger.LogWarning($"Player with ID {playerId} provided an invalid explorer route.");
+                throw new GameRuleException("The route must contain at least one edge.");
+            }
+
+            var cost = _playerService.CalculateMoveCost(player, route.Count - 1);
+
+            if (!_playerService.CanAfford(player, cost))
+            {
+                _logger.LogWarning($"Player with ID {playerId} cannot afford to move an explorer.");
+                throw new GameRuleException("Player cannot afford to move an explorer.");
+            }
+
+            var (clothingReq, shelterReq) = _boardService.CheckRoute(session, playerId, route);
+
+            if (!_playerService.MeetsTravelRequirements(player, clothingReq, shelterReq))
+            {
+                _logger.LogWarning($"Player with ID {playerId} does not meet the route requirements.");
+                throw new GameRuleException("The player does not meet the path requirements.");
+            }
+
+            var explorationCounters = _boardService.MoveExplorer(session, playerId, route);
+
+            _playerService.SpendResources(session, playerId, cost);
+
+            //TODO Exploration Counters processing
+        }
+    }
 }

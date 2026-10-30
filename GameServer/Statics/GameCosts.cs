@@ -15,6 +15,8 @@ public static class GameCosts
         { ResourceType.Hides, 1 }
     };
 
+    public const int ExplorerBaseMovementRange = 2;
+
     public static readonly Dictionary<ResourceType, int> MoveExplorerCost = new()
     {
         { ResourceType.Meat, 1 }

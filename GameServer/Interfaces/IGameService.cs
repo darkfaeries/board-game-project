@@ -9,4 +9,7 @@ public interface IGameService
         GameSession session,
         Guid playerId,
         Dictionary<ResourceType, int> selectedResources);
+    void ConvertExplorerToCamp(GameSession session, Guid playerId, AxialCoords nodeCoords);
+    void CreateExplorer(GameSession session, Guid playerId, AxialCoords nodeCoords);
+    void MoveExplorer(GameSession session, Guid playerId, List<AxialCoords> route);
 }
