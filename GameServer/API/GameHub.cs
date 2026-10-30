@@ -447,8 +447,14 @@ class GameHub : Hub
         }
         EnsureCurrentPlayer(session, player);
 
-        var result = _playerService.ConvertExplorerToCamp(session, player.Id, nodeCoords);
-        if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
+        try
+        {
+            _gameService.ConvertExplorerToCamp(session, player.Id, nodeCoords);
+        }
+        catch (GameRuleException ex)
+        {
+            throw new HubException(ex.Message);
+        }
 
         await Clients.Group(code).SendAsync("ExplorerConvertedToCamp", new { player.Id, nodeCoords });
     }
@@ -478,8 +484,14 @@ class GameHub : Hub
         }
         EnsureCurrentPlayer(session, player);
 
-        var result = _playerService.CreateExplorer(session, player.Id, nodeCoords);
-        if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
+        try
+        {
+            _gameService.CreateExplorer(session, player.Id, nodeCoords);
+        }
+        catch (GameRuleException ex)
+        {
+            throw new HubException(ex.Message);
+        }
 
         await Clients.Group(code).SendAsync("ExplorerCreated", new { player.Id, nodeCoords });
     }
@@ -509,14 +521,14 @@ class GameHub : Hub
         }
         EnsureCurrentPlayer(session, player);
 
-        if (route == null || route.Count != 2)
+        try
         {
-            _logger.LogWarning($"Player {player.Id} must move an explorer along exactly one edge.");
-            throw new HubException("The route must contain exactly one edge.");
+            _gameService.MoveExplorer(session, player.Id, route);
         }
-
-        var result = _playerService.MoveExplorer(session, player.Id, route);
-        if (!result.IsSuccess) throw new HubException(result.ErrorMessage);
+        catch (GameRuleException ex)
+        {
+            throw new HubException(ex.Message);
+        }
 
         await Clients.Group(code).SendAsync("ExplorerMoved", new { player.Id, route });
     }
