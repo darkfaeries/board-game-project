@@ -29,6 +29,7 @@ public class GameClient
     public event Action<ProgressAdvancedEvent>? ProgressAdvanced;
     public event Action<WinnerCheckedEvent>? WinnerChecked;
     public event Action<PlayerReconnectedEvent>? PlayerReconnected;
+    public event Action<InitialPlacementSubmittedEvent>? InitialPlacementSubmitted;
 
 
     public GameClient(string baseUrl, ILogger<GameClient> logger)
@@ -117,6 +118,9 @@ public class GameClient
 
     public Task<(bool Ok, string? Error)> EndTurnAsync() =>
         InvokeGameMethodAsync("EndTurn", false);
+    
+    public Task<(bool Ok, string? Error)> SubmitInitialPlacementAsync(AxialCoords nodeCoords) =>
+        InvokeGameMethodAsync("SubmitInitialPlacement", false, nodeCoords);
 
     public Task<(bool Ok, string? Error)> ReconnectAsync(string gameCode) =>
         InvokeGameMethodAsync("ReconnectToSession", false, gameCode);
@@ -182,6 +186,10 @@ public class GameClient
         _hub.On<WinnerCheckedEvent>("WinnerChecked", value => WinnerChecked?.Invoke(value));
         _hub.On<PlayerReconnectedEvent>("PlayerReconnected", value => PlayerReconnected?.Invoke(value));
 
+        _hub.On<InitialPlacementSubmittedEvent>(
+            "InitialPlacementSubmitted",
+            value => InitialPlacementSubmitted?.Invoke(value));
+        
         await _hub.StartAsync();
     }
 
@@ -261,3 +269,9 @@ public sealed record SevenRolledEvent(Guid Id, int DiceRoll, List<PendingDecisio
 public sealed record PendingDecisionEvent(Guid PlayerId, string DecisionType, int RequiredCount);
 public sealed record DiscardResourcesSubmittedEvent(Guid Id);
 public sealed record PlayerReconnectedEvent(string code);
+public sealed record InitialPlacementSubmittedEvent(
+    Guid PlayerId,
+    AxialCoords NodeCoords,
+    Guid? NextPlayerId,
+    GameStatus Status,
+    TurnPhase Phase);
