@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace GameServer;
 
 public class User
@@ -5,4 +7,7 @@ public class User
     public Guid Id { get; set; }
     public string Username { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
+
+    [NotMapped]
+    public CancellationTokenSource? DisconnectTimer { get; set; }
 }

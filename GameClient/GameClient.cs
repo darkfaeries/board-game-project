@@ -28,6 +28,7 @@ public class GameClient
     public event Action<ExplorerConvertedToCampEvent>? ExplorerConvertedToCamp;
     public event Action<ProgressAdvancedEvent>? ProgressAdvanced;
     public event Action<WinnerCheckedEvent>? WinnerChecked;
+    public event Action<PlayerReconnectedEvent>? PlayerReconnected;
 
 
     public GameClient(string baseUrl, ILogger<GameClient> logger)
@@ -63,15 +64,12 @@ public class GameClient
             return (false, "Game code cannot be empty.");
         }
 
-        //пока нет авторизации будет рандомыш
-        var tempname = $"Player_{Guid.NewGuid().ToString().Substring(0, 4)}";
-
         try
         {
             await EnsureConnectedAsync();
 
             var code = gameCode.Trim().ToUpperInvariant();
-            var players = await _hub!.InvokeAsync<int>("JoinSession", code, tempname);
+            var players = await _hub!.InvokeAsync<int>("JoinSession", code);
 
             GameCode = code;
             PlayerCount = players;
@@ -119,6 +117,9 @@ public class GameClient
 
     public Task<(bool Ok, string? Error)> EndTurnAsync() =>
         InvokeGameMethodAsync("EndTurn", false);
+
+    public Task<(bool Ok, string? Error)> ReconnectAsync(string gameCode) =>
+        InvokeGameMethodAsync("ReconnectToSession", false, gameCode);
 
     public async Task DisconnectAsync()
     {
@@ -179,6 +180,7 @@ public class GameClient
             value => ExplorerConvertedToCamp?.Invoke(value));
         _hub.On<ProgressAdvancedEvent>("ProgressAdvanced", value => ProgressAdvanced?.Invoke(value));
         _hub.On<WinnerCheckedEvent>("WinnerChecked", value => WinnerChecked?.Invoke(value));
+        _hub.On<PlayerReconnectedEvent>("PlayerReconnected", value => PlayerReconnected?.Invoke(value));
 
         await _hub.StartAsync();
     }
@@ -258,3 +260,4 @@ public sealed record WinnerCheckedEvent(Guid Id);
 public sealed record SevenRolledEvent(Guid Id, int DiceRoll, List<PendingDecisionEvent> PendingDecisions);
 public sealed record PendingDecisionEvent(Guid PlayerId, string DecisionType, int RequiredCount);
 public sealed record DiscardResourcesSubmittedEvent(Guid Id);
+public sealed record PlayerReconnectedEvent(string code);

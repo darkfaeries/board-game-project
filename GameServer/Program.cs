@@ -36,6 +36,7 @@ builder.Services.AddSwaggerGen(options =>
 
 
 builder.Services.AddSingleton<IGameStore, GameStore>();
+builder.Services.AddSingleton<ConnectionManager>();
 builder.Services.AddSingleton<IBoardFactory>(serviceProvider =>
 {
     var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
