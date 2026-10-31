@@ -13,7 +13,7 @@ public class AxialCoords
         return HashCode.Combine(q, r);
     }
 
-    public override bool Equals(object obj)
+    public override bool Equals(object? obj)
     {
         return obj is AxialCoords other && q == other.q && r == other.r;
     }
