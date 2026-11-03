@@ -7,7 +7,7 @@ using System.Linq;
 public class Player
 {
     public Guid Id { get; }
-    public string Name { get; } = string.Empty;
+    public string Name { get; }
     public PlayerColor Color { get; }
     public ResourceInventory Resources { get; set; } = new ResourceInventory();
     public ProgressState Progress { get; set; } = new ProgressState();
@@ -17,11 +17,9 @@ public class Player
     public List<Tribe> TribesCollected { get; } = new List<Tribe>();
     public List<ExplorationCounter> ExplorationCounters { get; } = new List<ExplorationCounter>();
 
-    public string ConnectionId { get; set; } = string.Empty;
-
-    public Player(string name, PlayerColor color)
+    public Player(Guid id, string name, PlayerColor color)
     {
-        Id = Guid.NewGuid();
+        Id = id;
         Name = name;
         Color = color;
     }
