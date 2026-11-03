@@ -15,11 +15,12 @@ class GameHub : Hub
     private readonly ITurnService _turnService;
     private readonly IPlayerService _playerService;
     private readonly ConnectionManager _connectionManager;
+    private readonly IGameService _gameService;
 
     public GameHub(
-        ILogger<GameHub> logger, IGameStore store,
+        ILogger<GameHub> logger, IGameStore store, 
         ITurnService turnService, IPlayerService playerService,
-        ConnectionManager connectionManager
+        IGameService gameService, ConnectionManager connectionManager
         )
     {
         _logger = logger;
@@ -244,15 +245,63 @@ class GameHub : Hub
 
         if (diceRoll == 7)
         {
-            // TODO: SomeService.HadleSeven();
+            _gameService.OnSevenRolled(session);
+            await Clients.Group(code).SendAsync("SevenRolled", new
+            {
+                PlayerId = playerId,
+                DiceRoll = diceRoll,
+                PendingDecisions = session.GetGameState().PendingDecisions
+                    .Select(d => new
+                    {
+                        d.PlayerId,
+                        DecisionType = d.GetType().Name,
+                        RequiredCount = d is DiscardResourcesDecision discard
+                            ? discard.RequiredCount
+                            : 0
+                    })
+            });
         }
-        else
+        
+        else 
             _playerService.DistributeHexResources(session, diceRoll);
 
         await Clients.Group(code).SendAsync("RollPhaseCompleted", new
         {
             PlayerId = playerId,
             DiceRoll = diceRoll,
+        });
+    }
+
+    public async Task DiscardResourcesDecision(
+        string code, Dictionary<ResourceType, int> selectedResources)
+    {
+        var session = _store.GetSession(code);
+        if (session == null)
+        {
+            _logger.LogCritical($"Failed to execute Discard Resources : session with id {code} doesn`t exist");
+            throw new HubException("SessionId doesn`t exist");
+        }
+
+        var player = session.GetPlayers()
+                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
+                    ?? throw new HubException("Player doesn't exist");
+
+        if (session.GetGameState().PendingDecisions.FirstOrDefault(d => d.PlayerId == player.Id) == null)
+        {
+            _logger.LogWarning($"Player {player.Id} attempted to discard resources without a pending decision.");
+            throw new HubException("You do not have a pending decision to discard resources.");
+        }
+
+        var result = _gameService.SubmitDiscardResources(session, player.Id, selectedResources);
+        if (!result)
+        {
+            _logger.LogWarning($"Failed to submit discard resources for player {player.Id}.");
+            throw new HubException($"Failed to submit discard resources for player {player.Id}.");
+        }
+
+        await Clients.Group(code).SendAsync("DiscardResourcesSubmitted", new
+        {
+            PlayerId = player.Id
         });
     }
 

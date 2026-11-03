@@ -9,7 +9,7 @@ public class GameState
     public GameStatus Status { get; set; }
     public TurnPhase Phase { get; set; }
     public Guid? CurrentPlayerId { get; set; }
-    public int TurnNumber { get; set; }
+    public int TurnNumber { get; set; } = 1;
     public List<Player> Players { get; set; } = new();
     public Dictionary<PlayerColor, int> AvailableColors { get; set; } = new()
     {
@@ -20,7 +20,7 @@ public class GameState
     };
     public BoardState Board { get; }
     public VictoryState Victory { get; set; } = new VictoryState();
-    public PendingDecision[] PendingDecisions { get; set; } = Array.Empty<PendingDecision>();
+    public List<PendingDecision> PendingDecisions { get; set; } = new();
 
     public GameState(BoardState board)
     {

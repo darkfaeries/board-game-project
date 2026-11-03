@@ -50,8 +50,15 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
     public void NextPlayer()
     {
         if (gameState.Players.Count == 0) return;
+
         var index = gameState.Players.FindIndex(p => p.Id == gameState.CurrentPlayerId);
         gameState.CurrentPlayerId = gameState.Players[(index + 1) % gameState.Players.Count].Id;
+
+        if (gameState.CurrentPlayerId == gameState.Players[0].Id)
+        {
+            gameState.TurnNumber++;
+            logger.LogInformation($"Turn {gameState.TurnNumber} started.");
+        }
     }
 
     public TurnPhase NextPhase()
@@ -104,7 +111,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
         return true;
     } 
 
-    public bool StartGame()
+    public bool InitializeSetup()
     {
         if (gameState.Status != GameStatus.WaitingForPlayers)
         {
@@ -122,7 +129,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
             return false;
         }
 
-        gameState.Status = GameStatus.Playing;
+        gameState.Status = GameStatus.Setup;
         gameState.CurrentPlayerId = gameState.Players[0].Id;
         gameState.Phase = TurnPhase.Roll;
         return true;
