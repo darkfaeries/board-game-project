@@ -115,7 +115,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
         return true;
     } 
 
-    public bool StartGame()
+    public bool InitializeSetup()
     {
         if (gameState.Status != GameStatus.WaitingForPlayers)
         {
@@ -133,7 +133,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
             return false;
         }
 
-        gameState.Status = GameStatus.Playing;
+        gameState.Status = GameStatus.Setup;
         gameState.CurrentPlayerId = gameState.Players[0].Id;
         gameState.Phase = TurnPhase.Roll;
         return true;
