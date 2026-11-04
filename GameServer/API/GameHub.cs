@@ -28,6 +28,7 @@ class GameHub : Hub
         _turnService = turnService;
         _playerService = playerService;
         _connectionManager = connectionManager;
+        _gameService = gameService;
     }
 
     public override async Task OnConnectedAsync()
@@ -56,7 +57,7 @@ class GameHub : Hub
             throw new HubException("Player not found.");
         }
 
-        var result = session.StartGame();
+        var result = _gameService.StartGame(session);
         if (!result)
         {
             _logger.LogCritical($"Failed to start game in session {code}");
@@ -282,9 +283,15 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player doesn't exist");
+        var userId = GetUserIdFromContext();
+        var player = session.GetGameState().GetPlayer(userId);
+
+        if (player == null)
+        {
+            _logger.LogWarning($"Player with user ID {userId} not found in session {code}.");
+            throw new HubException("Player not found.");
+        }
+        EnsureCurrentPlayer(session, player);
 
         if (session.GetGameState().PendingDecisions.FirstOrDefault(d => d.PlayerId == player.Id) == null)
         {

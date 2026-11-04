@@ -47,6 +47,7 @@ builder.Services.AddSingleton<IBoardFactory>(serviceProvider =>
 });
 builder.Services.AddTransient<ITurnService, TurnService>();
 builder.Services.AddTransient<IPlayerService, PlayerService>();
+builder.Services.AddTransient<IGameService, GameService>();
 builder.Services.AddTransient<IRepository<User>, UserRepository>();
 builder.Services.AddSignalR();
 
