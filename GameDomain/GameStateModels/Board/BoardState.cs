@@ -10,6 +10,9 @@ public class BoardState
     public Dictionary<AxialCoords, Node> Nodes { get; } = new Dictionary<AxialCoords, Node>();
     public Dictionary<Path, ExplorationPath> ExplorationPaths { get; } = new Dictionary<Path, ExplorationPath>();
     public HashSet<Path> BlockedPaths { get; } = new HashSet<Path>();
+    // Dict<position, userId>
+    public Dictionary<AxialCoords, Guid> CampPositions { get; set; } = new Dictionary<AxialCoords, Guid>();
+    public Dictionary<AxialCoords, Guid> ExplorerPositions { get; set; } = new Dictionary<AxialCoords, Guid>();
 
     public AxialCoords? NeanderthalPosition { get; set; } = null;
     public AxialCoords? SabertoothTigerPosition { get; set; } = null;
@@ -172,8 +175,7 @@ public class BoardState
         throw new NotImplementedException();
     }
 
-    public bool IsOccupied(AxialCoords coords)
-    {
-        throw new NotImplementedException();
-    }
+    public bool IsOccupied(AxialCoords coords) =>
+        CampPositions.ContainsKey(coords) || ExplorerPositions.ContainsKey(coords);
+
 }
