@@ -160,18 +160,6 @@ public class BoardState
         BlockedPaths = path_data.Item2;
     }
 
-    public List<Path> GetAdjacentPaths(AxialCoords nodeCoords)
-    {
-        // TODO today
-        throw new NotImplementedException();
-    }
-
-    public List<Path> GetAdjacentIntersections(AxialCoords nodeCoords)
-    {
-        // TODO today
-        throw new NotImplementedException();
-    }
-
     public bool IsOccupied(AxialCoords coords)
     {
         throw new NotImplementedException();
