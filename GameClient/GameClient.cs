@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Net.Http.Json;
 using System.Text.Json;
 
 namespace GameClient;
@@ -10,6 +12,8 @@ public class GameClient
     private readonly string _baseUrl;
     private readonly ILogger<GameClient> _logger;
     private HubConnection? _hub;
+    private readonly HttpClient _httpClient;
+    private string? _accessToken;
 
     public string? GameCode { get; private set; }
     public int PlayerCount { get; private set; }
@@ -32,9 +36,11 @@ public class GameClient
     public event Action<InitialPlacementSubmittedEvent>? InitialPlacementSubmitted;
 
 
-    public GameClient(string baseUrl, ILogger<GameClient> logger)
+    public GameClient(
+        string baseUrl, ILogger<GameClient> logger, HttpClient? httpClient = null)
     {
         _baseUrl = baseUrl.TrimEnd('/');
+        _httpClient = httpClient ?? new HttpClient();
         _logger = logger;
     }
 
@@ -118,7 +124,7 @@ public class GameClient
 
     public Task<(bool Ok, string? Error)> EndTurnAsync() =>
         InvokeGameMethodAsync("EndTurn", false);
-    
+
     public Task<(bool Ok, string? Error)> SubmitInitialPlacementAsync(AxialCoords nodeCoords) =>
         InvokeGameMethodAsync("SubmitInitialPlacement", false, nodeCoords);
 
@@ -155,9 +161,15 @@ public class GameClient
             await DisconnectAsync();
 
         _hub = new HubConnectionBuilder()
-            .WithUrl($"{_baseUrl}/gamehub")
-            .WithAutomaticReconnect()
-            .Build();
+        .WithUrl(
+            $"{_baseUrl}/gamehub",
+            options =>
+            {
+                options.AccessTokenProvider = () =>
+                    Task.FromResult(_accessToken);
+            })
+        .WithAutomaticReconnect()
+        .Build();
 
         _hub.On<JsonElement>("PlayerCountChanged", payload =>
         {
@@ -170,7 +182,7 @@ public class GameClient
         _hub.On<TurnChangedEvent>("TurnChanged", value => TurnChanged?.Invoke(value));
         _hub.On<SevenRolledEvent>("SevenRolled", value => SevenRolled?.Invoke(value));
         _hub.On<DiscardResourcesSubmittedEvent>(
-            "DiscardResourcesSubmitted", 
+            "DiscardResourcesSubmitted",
             value => DiscardResourcesSubmitted?.Invoke(value));
         _hub.On<RollPhaseCompletedEvent>("RollPhaseCompleted", value => RollPhaseCompleted?.Invoke(value));
         _hub.On<PlayerTradePhaseCompletedEvent>(
@@ -189,7 +201,7 @@ public class GameClient
         _hub.On<InitialPlacementSubmittedEvent>(
             "InitialPlacementSubmitted",
             value => InitialPlacementSubmitted?.Invoke(value));
-        
+
         await _hub.StartAsync();
     }
 
@@ -222,6 +234,33 @@ public class GameClient
         catch (Exception ex)
         {
             return Fail(ex);
+        }
+    }
+
+    public async Task AuthenticateForDevelopmentAsync()
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"{_baseUrl}/api/auth/dev/login",
+            new
+            {
+                username = "dev",
+                password = ""
+            });
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+
+            throw new HttpRequestException(
+                $"Development login failed: {response.StatusCode}. {error}");
+        }
+
+        _accessToken = await response.Content.ReadAsStringAsync();
+
+        if (string.IsNullOrWhiteSpace(_accessToken))
+        {
+            throw new InvalidOperationException(
+                "Development login returned an empty token.");
         }
     }
 

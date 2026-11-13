@@ -62,6 +62,25 @@ public class AuthController : ControllerBase
         return Ok(token);
     }
 
+    [HttpPost("dev/login")]
+    public async Task<IActionResult> DevLogin(AuthRequestDto request, IWebHostEnvironment webHostEnvironment)
+    {
+        if (!webHostEnvironment.IsDevelopment())
+        {
+            return Forbid("Dev login is only allowed in development environment.");
+        }
+    
+        var user = _userRepo.Get(request.Username);
+        if (user == null)
+        {
+            user = new User { Username = request.Username };
+            _userRepo.Create(user);
+        }
+
+        var token = GenerateJwtToken(user.Id.ToString(), request.Username);
+        return Ok(token);
+    }
+
     private string GenerateJwtToken(string id, string username)
     {
         var jwtSettings = _configuration.GetSection("Jwt");
