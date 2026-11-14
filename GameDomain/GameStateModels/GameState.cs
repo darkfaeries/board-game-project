@@ -35,10 +35,38 @@ public class GameState
         return Players.Single(player => player.Id == CurrentPlayerId.Value);
     }
 
-    public int CalculateVictoryPoints(Guid playerId)
+    public bool CalculateVictoryPoints(Guid playerId)
     {
-        // The diagram does not specify the scoring rules.
-        throw new NotImplementedException();
+        int victoryPoints = 0;
+        var player = GetPlayer(playerId);
+        if (player == null) return false;
+        victoryPoints += player.TribesCollected.Count;
+        foreach (ProgressType progressType in Enum.GetValues<ProgressType>())
+        {
+            if (player.Progress.GetLevel(progressType) == GameConstants.MaxProgressLevel)
+            {
+                victoryPoints += 1;
+            }
+        }
+        foreach (var counter in player.ExplorationCounters)
+        {
+            if (counter is AdaptationCounter)
+            {
+                victoryPoints += 1;
+            }
+        }
+
+        if (Victory.ExplorationCardOwnerId == playerId)
+        {
+            victoryPoints += 2;
+        }
+
+        if (Victory.ExpansionCardOwnerId == playerId)
+        {
+            victoryPoints += 2;
+        }
+        
+        return victoryPoints >= GameConstants.VictoryPointsToWin;
     }
 
     public Player? GetPlayer(Guid playerId) =>
