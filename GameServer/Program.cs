@@ -87,6 +87,17 @@ builder.Services.AddAuthentication(options =>
 });
 builder.Services.AddAuthorization();
 
+builder.Services.AddSingleton<ArrayHeightSource>(services =>
+{
+    var loggerArrayHeightSource = services.GetRequiredService<ILogger<ArrayHeightSource>>();
+    var loggerPngReader = services.GetRequiredService<ILogger<PngReader>>();
+    var pngPath = System.IO.Path.Combine(AppContext.BaseDirectory, "MapGeneration", "Templates", "Earth", "earth-height.png");
+    var reader = new PngReader(loggerPngReader, pngPath);
+    float[,] heights = reader.Read();
+
+    return new ArrayHeightSource(loggerArrayHeightSource, heights);
+});
+
 var app = builder.Build();
 
 app.UseAuthentication();

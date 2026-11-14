@@ -8,5 +8,5 @@ public interface IGameStore
     GameSession? GetSession(string code);
     bool AddSession(string code, GameSession session);
     bool RemoveSession(string code);
-    GameSession CreateSession();
+    GameSession CreateSession(MapType mapType);
 }
