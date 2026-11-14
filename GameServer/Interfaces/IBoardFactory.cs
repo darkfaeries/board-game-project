@@ -2,5 +2,5 @@ namespace GameServer;
 
 public interface IBoardFactory
 {
-    BoardState GetClassicBoard();
+    BoardState GetBoardState(MapType  mapType);
 }
