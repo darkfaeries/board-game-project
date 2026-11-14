@@ -1,11 +1,8 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
-//using GameDomain;
-
 namespace GameServer;
 
 public class GameSession(ILogger<GameSession> logger, GameState gameState) : Session
 {
+    public object Gate { get; } = new();
     public string Code { get; } = Guid.NewGuid().ToString("N")[..6].ToUpper();
 
     public bool JoinSession(Player new_player)
@@ -54,8 +51,15 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
     public void NextPlayer()
     {
         if (gameState.Players.Count == 0) return;
+
         var index = gameState.Players.FindIndex(p => p.Id == gameState.CurrentPlayerId);
         gameState.CurrentPlayerId = gameState.Players[(index + 1) % gameState.Players.Count].Id;
+
+        if (gameState.CurrentPlayerId == gameState.Players[0].Id)
+        {
+            gameState.TurnNumber++;
+            logger.LogInformation($"Turn {gameState.TurnNumber} started.");
+        }
     }
 
     public TurnPhase NextPhase()
@@ -108,7 +112,7 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
         return true;
     } 
 
-    public bool StartGame()
+    public bool InitializeSetup()
     {
         if (gameState.Status != GameStatus.WaitingForPlayers)
         {
@@ -126,9 +130,23 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
             return false;
         }
 
-        gameState.Status = GameStatus.Playing;
-        gameState.CurrentPlayerId = gameState.Players[0].Id;
-        gameState.Phase = TurnPhase.Roll;
+        var board = gameState.Board;
+
+        if (board.CampPositions.Count != 0 ||  board.ExplorerPositions.Count != 0 ||
+            board.Nodes.Values.Count(node => node.IsStartSpace) < gameState.Players.Count * GameConstants.InitialCampsCount)
+        {
+            logger.LogWarning($"Cannot start game in session {Code}: board is not ready for setup");
+            return false;
+        }
+
+        gameState.SetupPlayerOrder = gameState.Players
+            .Select(player => player.Id)
+            .ToArray();
+
+        gameState.CompletedSetupPlacementsCount = 0;
+        gameState.CurrentPlayerId = gameState.SetupPlayerOrder[0];
+        gameState.Status = GameStatus.Setup;
+        gameState.Phase = TurnPhase.Actions;
         return true;
     }
 
