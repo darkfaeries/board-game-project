@@ -707,6 +707,8 @@ class GameHub : Hub
 
     private Guid GetUserIdFromContext()
     {
+        // JwtBearer maps the standard "sub" claim to NameIdentifier by default.
+        // Accept both forms so hub identity works with either mapping setting.
         var userIdString = Context?.User?.FindFirstValue(JwtRegisteredClaimNames.Sub)
             ?? Context?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
         if (Guid.TryParse(userIdString, out var userId))

@@ -45,14 +45,37 @@ namespace GameClient
 
         private MapScreen _mapScreen = null!;
 
+        // Снимок состояния тянем из хаба и применяем на игровом потоке.
+        private GameSnapshot? _pendingSnapshot;
+        private volatile bool _snapshotDirty;
+
+        // Чей сейчас ход и какая фаза: сервер сообщает это только событиями.
+        private sealed record CurrentPlayerState(Guid? Id);
+        private volatile CurrentPlayerState _currentPlayer = new(null);
+
+        private sealed record PhaseState(TurnPhase Phase, bool RollUsed, int? LastRoll);
+        private volatile PhaseState _phaseState = new(TurnPhase.Roll, false, null);
+        private sealed record StatusState(GameStatus Status);
+        private volatile StatusState _gameStatus = new(GameStatus.WaitingForPlayers);
+
+        private Guid? _myPlayerId;
+        private bool _gameStarted;
+        private int _gameStartEventPending;
+
         public Client()
         {
             _graphics = new GraphicsDeviceManager(this);
-            _graphics.PreferredBackBufferWidth = 1920;
-            _graphics.PreferredBackBufferHeight = 1080;
-            _graphics.IsFullScreen = false;
+            var displayMode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
+            _graphics.PreferredBackBufferWidth = displayMode.Width;
+            _graphics.PreferredBackBufferHeight = displayMode.Height;
+            _graphics.IsFullScreen = true;
             _graphics.HardwareModeSwitch = false;
             _graphics.PreferMultiSampling = true;
+
+            // F11/Alt+Enter returns to a usable window instead of opening a
+            // 1920x1080 window that may not fit on the current monitor.
+            _windowedWidth = Math.Min(1600, displayMode.Width);
+            _windowedHeight = Math.Min(900, displayMode.Height);
 
             Content.RootDirectory = "Content";
             IsMouseVisible = true;
@@ -67,7 +90,47 @@ namespace GameClient
             _networkClient.PlayerCountChanged += (playerCount) =>
             {
                 _statusLabelMain.Text = _statusLabelShadow.Text = $"Подключено, код: {_networkClient.GameCode}, игроков: {playerCount}";
+                _snapshotDirty = true;
             };
+
+            // Любое игровое событие означает, что состояние на карте пора обновить.
+            _networkClient.GameStarted += value =>
+            {
+                _currentPlayer = new CurrentPlayerState(value.CurrentPlayerId);
+                _phaseState = new PhaseState(value.CurrentPhase, false, null);
+                _gameStatus = new StatusState(GameStatus.Setup);
+                // SignalR callbacks run off the game thread. Let Update perform
+                // the UI transition for every client that receives the broadcast.
+                System.Threading.Interlocked.Exchange(ref _gameStartEventPending, 1);
+                _snapshotDirty = true;
+            };
+            _networkClient.TurnChanged += value =>
+            {
+                // Сервер шлёт событие после каждого EndTurn, поэтому фазу двигаем так же, как он.
+                _currentPlayer = new CurrentPlayerState(value.NextPlayerId);
+                _phaseState = new PhaseState(NextPhase(_phaseState.Phase), false, null);
+                _gameStatus = new StatusState(GameStatus.Playing);
+                _snapshotDirty = true;
+            };
+            _networkClient.InitialPlacementSubmitted += value =>
+            {
+                _currentPlayer = new CurrentPlayerState(value.NextPlayerId);
+                _phaseState = new PhaseState(value.Phase, false, null);
+                _gameStatus = new StatusState(value.Status);
+                _snapshotDirty = true;
+            };
+            _networkClient.RollPhaseCompleted += value =>
+            {
+                _phaseState = new PhaseState(_phaseState.Phase, true, value.DiceRoll);
+                _snapshotDirty = true;
+            };
+            _networkClient.ExplorerCreated += _ => _snapshotDirty = true;
+            _networkClient.ExplorerMoved += _ => _snapshotDirty = true;
+            _networkClient.ExplorerConvertedToCamp += _ => _snapshotDirty = true;
+            _networkClient.ProgressAdvanced += _ => _snapshotDirty = true;
+            _networkClient.PlayerTradePhaseCompleted += _ => _snapshotDirty = true;
+            _networkClient.BankTradeCompleted += _ => _snapshotDirty = true;
+            _networkClient.DiscardResourcesSubmitted += _ => _snapshotDirty = true;
         }
 
         protected override void LoadContent()
@@ -78,6 +141,64 @@ namespace GameClient
             _mapScreen = new MapScreen(GraphicsDevice, Content);
             _mapScreen.Initialize();
             _mapScreen.LoadContent();
+
+            _mapScreen.RollRequested += () => _ = RollAsync();
+            _mapScreen.EndTurnRequested += () => _ = EndTurnAsync();
+            _mapScreen.InitialPlacementRequested += coords => _ = RunMapActionAsync(
+                () => _networkClient.SubmitInitialPlacementAsync(coords), "Не удалось поставить начальный кемп");
+            _mapScreen.CreateExplorerRequested += coords => _ = RunMapActionAsync(
+                () => _networkClient.CreateExplorerAsync(coords), "Не удалось создать исследователя");
+            _mapScreen.ConvertExplorerToCampRequested += coords => _ = RunMapActionAsync(
+                () => _networkClient.ConvertExplorerToCampAsync(coords), "Не удалось построить кемп");
+            _mapScreen.MoveExplorerRequested += route => _ = RunMapActionAsync(
+                () => _networkClient.MoveExplorerAsync(route), "Не удалось переместить исследователя");
+            _mapScreen.TradeWithPlayerRequested += (targetId, offer) => _ = RunMapActionAsync(
+                () => _networkClient.TradeWithPlayerAsync(targetId, offer), "Не удалось передать ресурсы");
+            _mapScreen.TradeWithBankRequested += (offer, resource) => _ = RunMapActionAsync(
+                () => _networkClient.TradeWithBankAsync(offer, resource), "Не удалось обменять ресурсы");
+        }
+
+        private static TurnPhase NextPhase(TurnPhase phase) => phase switch
+        {
+            TurnPhase.Roll => TurnPhase.Trade,
+            TurnPhase.Trade => TurnPhase.Actions,
+            _ => TurnPhase.Roll,
+        };
+
+        protected override void Initialize()
+        {
+            base.Initialize();
+            SyncBackBufferToWindow();
+        }
+
+        // Окно 1920x1080 на мониторе меньшего размера обрезается, а backbuffer остаётся
+        // 1920x1080: UI рисуется за границей окна и клики по нему не попадают.
+        // После создания устройства подгоняем backbuffer под реальную клиентскую область.
+        private void SyncBackBufferToWindow()
+        {
+            if (_graphics.IsFullScreen) return;
+
+            var bounds = Window.ClientBounds;
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+
+            _windowedWidth = bounds.Width;
+            _windowedHeight = bounds.Height;
+
+            if (_graphics.PreferredBackBufferWidth == bounds.Width &&
+                _graphics.PreferredBackBufferHeight == bounds.Height)
+                return;
+
+            _isApplyingClientSizeChanges = true;
+            try
+            {
+                _graphics.PreferredBackBufferWidth = bounds.Width;
+                _graphics.PreferredBackBufferHeight = bounds.Height;
+                _graphics.ApplyChanges();
+            }
+            finally
+            {
+                _isApplyingClientSizeChanges = false;
+            }
         }
 
         private void BuildUI()
@@ -426,13 +547,35 @@ namespace GameClient
         {
             if (_isConnected)
             {
-                _appState = AppState.InGame;
+                if (!_gameStarted)
+                {
+                    _createButton.Enabled = false;
+                    var start = await _networkClient.StartGameAsync();
+                    _createButton.Enabled = true;
+
+                    if (!start.Ok)
+                    {
+                        _statusLabelMain.Text = _statusLabelShadow.Text = start.Error ?? "Не удалось начать игру";
+                        _statusLabelMain.TextColor = Color.LightCoral;
+                    }
+                }
                 return;
             }
 
             _createLabelMain.Text = _createLabelShadow.Text = "Creating...";
             _createButton.Enabled = false;
             _connectButton.Enabled = false;
+
+            var auth = await _networkClient.AuthenticateGuestAsync(_playerName);
+            if (!auth.Ok)
+            {
+                _statusLabelMain.Text = _statusLabelShadow.Text = auth.Error ?? "Ошибка авторизации";
+                _statusLabelMain.TextColor = Color.LightCoral;
+                _createLabelMain.Text = _createLabelShadow.Text = "Create";
+                _createButton.Enabled = true;
+                _connectButton.Enabled = true;
+                return;
+            }
 
             var result = await _networkClient.CreateAsync();
 
@@ -482,6 +625,7 @@ namespace GameClient
             if (result.IsSuccess)
             {
                 _isConnected = true;
+                _snapshotDirty = true;
                 _statusLabelMain.Text = _statusLabelShadow.Text = $"Успешно подключено к игре: {gameCode}!";
                 _statusLabelMain.TextColor = Color.LightGreen;
                 _createLabelMain.Text = _createLabelShadow.Text = "Start Game";
@@ -502,6 +646,8 @@ namespace GameClient
         {
             await _networkClient.DisconnectAsync();
             _isConnected = false;
+            _pendingSnapshot = null;
+            _snapshotDirty = false;
             _statusLabelMain.Text = _statusLabelShadow.Text = "Вы не подключены к игре. Создайте новую игру.";
             _statusLabelMain.TextColor = Color.LightCoral;
             _createLabelMain.Text = _createLabelShadow.Text = "Create";
@@ -510,6 +656,14 @@ namespace GameClient
 
         protected override void Update(GameTime gameTime)
         {
+            if (System.Threading.Interlocked.Exchange(ref _gameStartEventPending, 0) == 1)
+            {
+                _gameStarted = true;
+                _appState = AppState.InGame;
+            }
+
+            PumpSnapshot();
+
             if (_appState == AppState.InGame)
             {
                 _mapScreen.Update(gameTime);
@@ -520,6 +674,107 @@ namespace GameClient
                 }
             }
             base.Update(gameTime);
+        }
+
+        // Применяет готовый снимок и, если состояние изменилось, запрашивает новый.
+        private void PumpSnapshot()
+        {
+            if (_pendingSnapshot is { } snapshot)
+            {
+                _pendingSnapshot = null;
+                _mapScreen.ApplySnapshot(snapshot);
+            }
+
+            if (!_snapshotDirty) return;
+
+            _snapshotDirty = false;
+            _ = RefreshSnapshotAsync();
+        }
+
+        private async Task RefreshSnapshotAsync()
+        {
+            try
+            {
+                var snapshot = await _networkClient.GetSnapshotAsync();
+                if (snapshot is null) return;
+
+                // Свой id ищем по уникальному имени, которое клиент отправляет при входе.
+                snapshot.YouPlayerId = snapshot.Players
+                    .FirstOrDefault(player => player.Name == _networkClient.AuthenticatedUsername)?.Id;
+                _myPlayerId = snapshot.YouPlayerId;
+                snapshot.GameCode = _networkClient.GameCode;
+
+                snapshot.CurrentPlayerId = _currentPlayer.Id;
+                snapshot.Status = _gameStatus.Status;
+                snapshot.Phase = _phaseState.Phase;
+                snapshot.RollUsed = _phaseState.RollUsed;
+                snapshot.LastRoll = _phaseState.LastRoll;
+
+                _pendingSnapshot = snapshot;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Не удалось получить состояние партии: {ex.Message}");
+            }
+        }
+
+        // --- Действия игрока в свой ход ---
+
+        private async Task RollAsync()
+        {
+            if (_myPlayerId is not Guid playerId) return;
+
+            _mapScreen.Busy = true;
+            try
+            {
+                var result = await _networkClient.RollPhaseAsync(playerId);
+                if (!result.Ok)
+                    _mapScreen.ShowMessage(result.Error ?? "Не удалось бросить кубики");
+
+                _snapshotDirty = true;
+            }
+            finally
+            {
+                _mapScreen.Busy = false;
+            }
+        }
+
+        private async Task EndTurnAsync()
+        {
+            _mapScreen.Busy = true;
+            try
+            {
+                var result = await _networkClient.EndTurnAsync();
+                if (!result.Ok)
+                    _mapScreen.ShowMessage(result.Error ?? "Не удалось завершить ход");
+
+                _snapshotDirty = true;
+            }
+            finally
+            {
+                _mapScreen.Busy = false;
+            }
+        }
+
+        private async Task RunMapActionAsync(
+            Func<Task<(bool Ok, string? Error)>> action,
+            string fallbackError)
+        {
+            if (_mapScreen.Busy) return;
+
+            _mapScreen.Busy = true;
+            try
+            {
+                var result = await action();
+                if (!result.Ok)
+                    _mapScreen.ShowMessage(result.Error ?? fallbackError);
+
+                _snapshotDirty = true;
+            }
+            finally
+            {
+                _mapScreen.Busy = false;
+            }
         }
 
         protected override void Draw(GameTime gameTime)

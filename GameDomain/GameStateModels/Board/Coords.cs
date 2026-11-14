@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 
 public class AxialCoords
@@ -28,10 +29,11 @@ public class AxialCoords
         return (q - r) % 3 == 0;
     }
 
-    public AxialCoords(int in_q, int in_r)
+    [JsonConstructor]
+    public AxialCoords(int q, int r)
     {
-        q = in_q;
-        r = in_r;
+        this.q = q;
+        this.r = r;
     }
 
     public AxialCoords(CubeCoords cubeCoords)

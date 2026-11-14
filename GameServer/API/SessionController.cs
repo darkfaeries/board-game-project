@@ -39,7 +39,25 @@ public class SessionController(IGameStore store) : ControllerBase
         {
             return NotFound();
         }
-        return Ok(session.GetGameState().Players);
+
+        var state = session.GetGameState();
+        var players = state.Players.Select(player => new
+        {
+            player.Id,
+            player.Name,
+            player.Color,
+            player.Resources,
+            player.Progress,
+            player.TribesCollected,
+            CampPositions = state.Board.CampPositions
+                .Where(position => position.Value == player.Id)
+                .Select(position => position.Key),
+            ExplorerPositions = state.Board.ExplorerPositions
+                .Where(position => position.Value == player.Id)
+                .Select(position => position.Key)
+        });
+
+        return Ok(players);
     }
 
     [HttpGet("{code}/players/{playerId}")]

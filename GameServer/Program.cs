@@ -6,10 +6,28 @@ using GameServer;
 using WebAPI.API;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using Npgsql;
 
-DotNetEnv.Env.Load(System.IO.Path.Combine(Directory.GetCurrentDirectory(), "../.env"));
+var envPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(Directory.GetCurrentDirectory(), "../.env"));
+if (File.Exists(envPath))
+    DotNetEnv.Env.Load(envPath);
 
 var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        $"Database connection is missing. Add ConnectionStrings__DefaultConnection to {envPath} " +
+        "using the format in the repository's .env.example file.");
+}
+
+var connectionSettings = new NpgsqlConnectionStringBuilder(connectionString);
+if (string.IsNullOrWhiteSpace(connectionSettings.Host))
+{
+    throw new InvalidOperationException(
+        $"Database connection in {envPath} has no Host. Set Host=localhost (or your PostgreSQL host).");
+}
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -44,6 +62,12 @@ builder.Services.AddSingleton<IBoardFactory>(serviceProvider =>
     var logger = serviceProvider.GetRequiredService<ILogger<BoardFactory>>();
     return new BoardFactory(mapsPath, logger);
 });
+builder.Services.AddTransient<IBoardService>(serviceProvider =>
+{
+    var mapsPath = System.IO.Path.Combine(AppContext.BaseDirectory, "GameFiles", "Maps");
+    var logger = serviceProvider.GetRequiredService<ILogger<BoardService>>();
+    return new BoardService(mapsPath, logger);
+});
 builder.Services.AddTransient<ITurnService, TurnService>();
 builder.Services.AddTransient<IPlayerService, PlayerService>();
 builder.Services.AddTransient<IGameService, GameService>();
@@ -51,7 +75,7 @@ builder.Services.AddTransient<IRepository<User>, UserRepository>();
 builder.Services.AddSignalR();
 
 builder.Services.AddDbContext<UserDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
 
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration));
