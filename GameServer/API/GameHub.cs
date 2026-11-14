@@ -8,7 +8,7 @@ using GameServer;
 
 namespace WebAPI.API;
 
-class GameHub : Hub
+partial class GameHub : Hub
 {
     ILogger<GameHub> _logger;
     private readonly IGameStore _store;
@@ -16,11 +16,13 @@ class GameHub : Hub
     private readonly IPlayerService _playerService;
     private readonly ConnectionManager _connectionManager;
     private readonly IGameService _gameService;
+	private readonly IFriendService _friendService;
 
     public GameHub(
         ILogger<GameHub> logger, IGameStore store, 
         ITurnService turnService, IPlayerService playerService,
-        IGameService gameService, ConnectionManager connectionManager
+        IGameService gameService, ConnectionManager connectionManager,
+		IFriendService friendService
         )
     {
         _logger = logger;
@@ -29,6 +31,7 @@ class GameHub : Hub
         _playerService = playerService;
         _connectionManager = connectionManager;
         _gameService = gameService;
+		_friendService = friendService;
     }
 
     public override async Task OnConnectedAsync()
