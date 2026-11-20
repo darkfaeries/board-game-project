@@ -41,6 +41,27 @@ public class AuthController : ControllerBase
         return Ok(token);
     }
 
+    [HttpPost("guest")]
+    public async Task<IActionResult> LoginAsGuest()
+    {
+        string username = string.Empty;
+        while (_userRepo.Get(username) != null || string.IsNullOrEmpty(username))
+        {
+            var suffix = Guid.NewGuid().ToString("N")[..5];
+            username = $"Guest_{suffix}";
+        }
+
+        var guestUser = new User
+        {
+            Username = username
+        };
+
+        _userRepo.Create(guestUser);
+
+        var token = GenerateJwtToken(guestUser.Id.ToString(), guestUser.Username, true);
+        return Ok(token);
+    }
+
     [HttpPost("login")]
     public async Task<IActionResult> Login(AuthRequestDto request)
     {
@@ -81,7 +102,7 @@ public class AuthController : ControllerBase
         return Ok(token);
     }
 
-    private string GenerateJwtToken(string id, string username)
+    private string GenerateJwtToken(string id, string username, bool isGuest = false)
     {
         var jwtSettings = _configuration.GetSection("Jwt");
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]!));
@@ -92,7 +113,8 @@ public class AuthController : ControllerBase
             new Claim(JwtRegisteredClaimNames.Sub, id),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(ClaimTypes.Role, "User"),
-            new Claim(ClaimTypes.Name, username)
+            new Claim(ClaimTypes.Name, username),
+            new Claim("IsGuest", isGuest.ToString())
         };
 
         var token = new JwtSecurityToken(

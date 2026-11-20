@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Data.SqlTypes;
 
 namespace GameServer;
 
@@ -6,11 +7,13 @@ public class ConnectionManager
 {
     private readonly ConcurrentDictionary<string, Guid> _connectionToUser = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _disconnectTimers = new();
+    private readonly ConcurrentDictionary<Guid, string> _userToIsGuest = new();
 
-    public void AddConnection(string connectionId, Guid userId)
+    public void AddConnection(string connectionId, Guid userId, string isGuest = "false")
     {
         _connectionToUser[connectionId] = userId;
-        
+        _userToIsGuest[userId] = isGuest.ToLower();
+
         if (_disconnectTimers.TryRemove(userId, out var cts))
         {
             cts.Cancel();
@@ -32,5 +35,10 @@ public class ConnectionManager
     public void SetDisconnectTimer(Guid userId, CancellationTokenSource cts)
     {
         _disconnectTimers[userId] = cts;
+    }
+
+    public bool IsUserGuest(Guid userId)
+    {
+        return _userToIsGuest.TryGetValue(userId, out var isGuest) && isGuest == "true";
     }
 }
