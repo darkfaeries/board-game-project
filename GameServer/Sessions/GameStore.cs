@@ -40,11 +40,11 @@ public class GameStore(
         return true;
     }
 
-    public GameSession CreateSession()
+    public GameSession CreateSession(MapType mapType, int? seed = null)
     {
         var session = new GameSession(
             sessionLogger,
-            new GameState(boardFactory.GetClassicBoard()));
+            new GameState(boardFactory.GetBoardState(mapType, seed)));
 
         if (!Sessions.TryAdd(session.Code, session))
         {

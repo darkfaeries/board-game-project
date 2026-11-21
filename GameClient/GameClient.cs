@@ -38,13 +38,13 @@ public class GameClient
         _logger = logger;
     }
 
-    public async Task<(bool Ok, string? Error)> CreateSessionAsync()
+    public async Task<(bool Ok, string? Error)> CreateSessionAsync(MapType mapType, int? seed = null)
     {
         try
         {
             await EnsureConnectedAsync();
 
-            var code = await _hub!.InvokeAsync<string>("CreateSession");
+            var code = await _hub!.InvokeAsync<string>("CreateSession", mapType, seed);
             GameCode = code;
             return (true, null);
         }
