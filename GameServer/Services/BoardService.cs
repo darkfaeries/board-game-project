@@ -97,6 +97,7 @@ public class BoardService : IBoardService
         return tribe;
     }
 
+    // place New explorer near camp
     public void PlaceExplorer(GameSession session, Guid  playerId, AxialCoords nodeCoords)
     {
         var board = session.GetGameState().Board;
@@ -191,6 +192,7 @@ public class BoardService : IBoardService
         return (clothReq, shelterReq);
     }
 
+    //set moving explorer
     public void SetExplorer(BoardState board, Guid playerId, AxialCoords to)
     {
         if (board.IsOccupied(to))
