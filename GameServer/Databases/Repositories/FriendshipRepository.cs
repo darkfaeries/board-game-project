@@ -22,7 +22,7 @@ public class EfFriendshipStore : IFriendshipStore
         return await _db.Users.Where(u => list.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Username);
     }
 
-    public Task<Friendship?> FindBetweenAsync(Guid a, Guid b) =>
+    public Task<Friendship?> FindAnyBetweenAsync(Guid a, Guid b) =>
         _db.Friendships.FirstOrDefaultAsync(f =>
             (f.RequesterId == a && f.AddresseeId == b) ||
             (f.RequesterId == b && f.AddresseeId == a));
@@ -38,7 +38,7 @@ public class EfFriendshipStore : IFriendshipStore
 
 
     
-    
+ 
     public async Task AddAsync(Friendship friendship)
     {
         _db.Friendships.Add(friendship);

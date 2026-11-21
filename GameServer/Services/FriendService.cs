@@ -13,16 +13,11 @@ public class FriendService : IFriendService
 
     public async Task<List<UserSearchResultDto>> SearchAsync(Guid userId, string query)
     {
-        if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
-        {
-            throw new FriendException("Enter at least 2 characters.");
-        }
-
-        var users = await _store.SearchUsersAsync(query, userId, 20);
+      var users = await _store.SearchUsersAsync(query, userId, 20);
         var result = new List<UserSearchResultDto>();
         foreach (var user in users)
         {
-            var link = await _store.FindBetweenAsync(userId, user.Id);
+            var link = await _store.FindAnyBetweenAsync(userId, user.Id);
             result.Add(new UserSearchResultDto(user.Id, user.Username, GetRelation(userId, link)));
         }
         return result;
@@ -35,7 +30,7 @@ public class FriendService : IFriendService
             throw new FriendException("You cannot add yourself.");
         }
 
-        var existing = await _store.FindBetweenAsync(userId, targetId);
+        var existing = await _store.FindAnyBetweenAsync(userId, targetId);
         if (existing != null)
         {
             if (existing.Status == FriendshipStatus.Accepted)
@@ -65,10 +60,22 @@ public class FriendService : IFriendService
     public async Task AcceptRequestAsync(Guid userId, Guid requestId)
     {
         var request = await _store.GetAsync(requestId);
-        if (request == null || request.AddresseeId != userId || request.Status != FriendshipStatus.Pending)
-        {
-            throw new FriendException("Request not found.");
-        }
+		if (request == null)
+    	{
+        	throw new FriendException("Friend request not found.");
+    	}
+
+    	if (request.AddresseeId != userId)
+    	{
+        	throw new FriendException("This friend request was not sent to you.");
+    	}
+
+	    if (request.Status != FriendshipStatus.Pending)
+	    {
+        	throw new FriendException("This friend request has already been answered.");
+    	}
+
+       
 
         request.Status = FriendshipStatus.Accepted;
         request.RespondedAt = DateTime.UtcNow;
@@ -79,10 +86,23 @@ public class FriendService : IFriendService
     public async Task DeclineRequestAsync(Guid userId, Guid requestId)
     {
         var request = await _store.GetAsync(requestId);
-        if (request == null || request.AddresseeId != userId || request.Status != FriendshipStatus.Pending)
-        {
-            throw new FriendException("Request not found.");
-        }
+		
+		if (request == null)
+    	{
+        	throw new FriendException("Friend request not found.");
+    	}
+
+    	if (request.AddresseeId != userId)
+    	{
+        	throw new FriendException("This friend request was not sent to you.");
+    	}
+
+	    if (request.Status != FriendshipStatus.Pending)
+	    {
+        	throw new FriendException("This friend request has already been answered.");
+    	}
+
+       
 
         await _store.DeleteAsync(request);
         _logger.LogInformation($"Friend request {requestId} declined by {userId}");
@@ -90,7 +110,7 @@ public class FriendService : IFriendService
 
     public async Task RemoveFriendAsync(Guid userId, Guid friendId)
     {
-        var link = await _store.FindBetweenAsync(userId, friendId);
+        var link = await _store.FindAnyBetweenAsync(userId, friendId);
         if (link == null || link.Status != FriendshipStatus.Accepted)
         {
             throw new FriendException("You are not friends with this user.");
