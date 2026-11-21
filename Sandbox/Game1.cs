@@ -25,7 +25,6 @@ public class Game1 : Game
     private readonly IHeightSource _earthHeights;
 
     private BoardState _board;
-    private GeneratedMap _generatedMap;
 
     private Mesh _boardMesh;
     private Vector2 _boardMin;
@@ -68,9 +67,10 @@ public class Game1 : Game
             }
             case MapType.BySeed:
             {
-                _generatedMap = new SeedMapGenerator().Generate(
+                var map = new SeedMapGenerator().Generate(
                     HeightMapOptions, _mapSeed, _loggerFactory.CreateLogger<SeedMapGenerator>());
-                _logger.LogInformation("Generated {HexCount} hexes with seed {Seed}.", _generatedMap.Cells.Count, _mapSeed);
+                _board = new BoardBuilder().Build(map, _mapSeed, _loggerFactory);
+                _logger.LogInformation("Generated {HexCount} hexes with seed {Seed}.", map.Cells.Count, _mapSeed);
                 break;
             }
             case MapType.Earth:
@@ -81,9 +81,10 @@ public class Game1 : Game
                     _earthHeights,
                     (0f, 0f),
                     (1f, 5f / 6f));
-                _generatedMap = new MapGenerator().Generate(
+                var map = new MapGenerator().Generate(
                     EarthMapOptions, croppedHeights, _loggerFactory.CreateLogger<MapGenerator>());
-                _logger.LogInformation("Generated {CellCount} cells from Earth heights.", _generatedMap.Cells.Count);
+                _board = new BoardBuilder().Build(map, loggerFactory: _loggerFactory);
+                _logger.LogInformation("Generated {CellCount} cells from Earth heights.", map.Cells.Count);
                 break;
             }
             default:
@@ -119,22 +120,32 @@ public class Game1 : Game
         var mb = new MeshBuilder();
         var pathsAdded = new HashSet<Path>();
 
-        if (_generatedMap != null)
+        if (_selectedMapType != MapType.Classic)
         {
-            int landCount = 0;
-            foreach (var cell in _generatedMap.Cells)
+            foreach (var hex in _board.Hexes.Values)
             {
-                if (_generatedMap.IsWater(cell)) continue;
-                Vector2 center = HexLayout.ToWorld(cell.Coords);
-                mb.AddHexagon(center, 1f, ElevationColor(cell.Elevation, _generatedMap.SeaLevel));
+                Vector2 center = HexLayout.ToWorld(hex.Coords);
+                mb.AddHexagon(center, 1f, TerrainColor(hex.Terrain));
                 mb.AddHexagonOutline(center, 1f, 0.035f, new Color(45, 55, 50));
-                landCount++;
             }
 
-            if (landCount == 0)
+            if (_board.Hexes.Count == 0)
                 throw new InvalidOperationException("The generated map contains no land cells to display.");
 
-            _logger.LogInformation("Displaying {LandCount} land cells.", landCount);
+            foreach (var path in _board.LandPaths)
+                AddRegularPath(mb, path);
+
+            foreach (var path in _board.SeaPaths)
+            {
+                mb.AddLine(HexLayout.ToWorld(path.from), HexLayout.ToWorld(path.to), 0.12f, new Color(125, 227, 245));
+            }
+
+            foreach (var node in _board.Nodes.Values)
+            {
+                mb.AddHexagon(HexLayout.ToWorld(node.Coords), 0.08f, new Color(255, 229, 164));
+            }
+
+            _logger.LogInformation("Displaying {LandCount} land cells.", _board.Hexes.Count);
             _boardMin = mb.Min;
             _boardMax = mb.Max;
             return mb.Build(GraphicsDevice);
@@ -270,15 +281,6 @@ public class Game1 : Game
         return Matrix.CreateScale(scale, scale, 1f) * Matrix.CreateTranslation(offset.X, offset.Y, 0f);
     }
 
-    private static Color ElevationColor(float elevation, float seaLevel)
-    {
-        float landHeight = seaLevel < 1 ? (elevation - seaLevel) / (1 - seaLevel) : 0;
-        if (landHeight < 0.15f)
-            return Color.Lerp(new Color(215, 205, 140), new Color(75, 140, 65), landHeight / 0.15f);
-        if (landHeight < 0.6f)
-            return Color.Lerp(new Color(75, 140, 65), new Color(130, 105, 80), (landHeight - 0.15f) / 0.45f);
-        return Color.Lerp(new Color(130, 105, 80), new Color(240, 240, 235), (landHeight - 0.6f) / 0.4f);
-    }
     private static Color TerrainColor(TerrainType terrain) => terrain switch
     {
         TerrainType.Hills => new Color(215, 130, 50),

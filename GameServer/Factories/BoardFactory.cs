@@ -47,7 +47,7 @@ public class BoardFactory : IBoardFactory
         var map = new MapGenerator().Generate(
             new MapGenerationOptions(56, 20, 1f / 255f), heights,
             _loggerFactory.CreateLogger<MapGenerator>());
-        var board = new BoardBuilder().Build(map);
+        var board = new BoardBuilder().Build(map, loggerFactory: _loggerFactory);
         _logger.LogInformation("Generated Earth board with {LandCount} land hexes.", board.Hexes.Count);
         return board;
     }
@@ -59,7 +59,7 @@ public class BoardFactory : IBoardFactory
         var map = new SeedMapGenerator().Generate(
             new MapGenerationOptions(40, 24, 0.5f), mapSeed,
             _loggerFactory.CreateLogger<SeedMapGenerator>());
-        var board = new BoardBuilder().Build(map);
+        var board = new BoardBuilder().Build(map, mapSeed, _loggerFactory);
         _logger.LogInformation("Generated board with seed {Seed} and {LandCount} land hexes.",
             mapSeed, board.Hexes.Count);
         return board;

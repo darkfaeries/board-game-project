@@ -3,8 +3,9 @@ namespace GameServer;
 public class SeedMapGenerator
 {
     private const int CandidateCount = 256;
-    private static readonly (int Q, int R)[] Neighbors =
-        [(1, 1), (2, -1), (1, -2), (-1, -1), (-2, 1), (-1, 2)];
+    private const int MaxCrossingSteps = 5;
+
+    private sealed record Layout(GeneratedMap Map, IReadOnlyList<IReadOnlyList<AxialCoords>> Continents);
 
     public GeneratedMap Generate(MapGenerationOptions options, int seed, ILogger logger)
     {
@@ -16,13 +17,15 @@ public class SeedMapGenerator
         GeneratedMap? best = null;
         double bestScore = double.PositiveInfinity;
         int bestCount = 0;
+        int bestLongestCrossing = 0;
+        long bestMovedCellSteps = 0;
         var generator = new MapGenerator();
 
         for (int attempt = 0; attempt < CandidateCount; attempt++)
         {
             int candidateSeed = unchecked(seed + attempt * (int)0x9E3779B9u);
             var map = generator.Generate(options, new NoiseHeightSource(candidateSeed, logger), logger);
-            var regions = FindLandRegions(map);
+            var regions = ContinentPathGenerator.FindLandRegions(map);
             int minimumSize = Math.Max(3, map.Cells.Count / 50);
             var continents = regions.Where(region => region.Count >= minimumSize).ToList();
             int landCount = continents.Sum(region => region.Count);
@@ -34,53 +37,140 @@ public class SeedMapGenerator
 
             double landFraction = (double)landCount / map.Cells.Count;
             double largestFraction = (double)continents.Max(region => region.Count) / landCount;
-            double score = Math.Abs(continents.Count - 4) * 10
-                         + Math.Abs(landFraction - 0.35) * 8
-                         + Math.Max(0, largestFraction - 0.45) * 24
-                         + Math.Max(0, 0.25 - landFraction) * 80;
-            logger.LogDebug(
-                "Candidate {Attempt} for seed {Seed} (noise seed {CandidateSeed}): score {Score:F3}, continents {ContinentCount}, land {LandFraction:P1}, largest continent {LargestFraction:P1} of land.",
-                attempt, seed, candidateSeed, score, continents.Count, landFraction, largestFraction);
-            if (score >= bestScore) continue;
+            double terrainScore = Math.Abs(continents.Count - 4) * 10
+                                + Math.Abs(landFraction - 0.35) * 8
+                                + Math.Max(0, largestFraction - 0.45) * 24
+                                + Math.Max(0, 0.25 - landFraction) * 80;
+            // Moving continents does not change the terrain score, and the remaining terms only add to it.
+            if (terrainScore >= bestScore) continue;
 
             var land = continents.SelectMany(region => region).ToHashSet();
-            best = new GeneratedMap(map.Cells.Select(cell =>
+            var filteredMap = new GeneratedMap(map.Cells.Select(cell =>
                 !map.IsWater(cell) && !land.Contains(cell.Coords)
                     ? cell with { Elevation = 0f }
                     : cell), map.SeaLevel);
+
+            var fitted = FitCrossings(new Layout(filteredMap, continents));
+            if (fitted is not { } result)
+            {
+                logger.LogDebug("Candidate {Attempt} for seed {Seed}: could not connect its continents within {MaxCrossingSteps} steps per crossing.",
+                    attempt, seed, MaxCrossingSteps);
+                continue;
+            }
+
+            double score = terrainScore + 0.1 * result.AverageCrossing + (double)result.MovedCellSteps / landCount;
+            logger.LogDebug(
+                "Candidate {Attempt} for seed {Seed} (noise seed {CandidateSeed}): score {Score:F3}, continents {ContinentCount}, land {LandFraction:P1}, largest continent {LargestFraction:P1} of land, longest crossing {LongestCrossing}, moved hex steps {MovedCellSteps}.",
+                attempt, seed, candidateSeed, score, continents.Count, landFraction, largestFraction, result.LongestCrossing, result.MovedCellSteps);
+            if (score >= bestScore) continue;
+
+            best = result.Map;
             bestScore = score;
             bestCount = continents.Count;
+            bestLongestCrossing = result.LongestCrossing;
+            bestMovedCellSteps = result.MovedCellSteps;
         }
 
         if (best is null)
         {
-            logger.LogError("No substantial land found for seed {Seed} after {CandidateCount} candidates.", seed, CandidateCount);
-            throw new InvalidOperationException("No substantial land was generated. Increase the map size or lower the sea level.");
+            logger.LogError("No suitable map found for seed {Seed} after {CandidateCount} candidates.", seed, CandidateCount);
+            throw new InvalidOperationException("No map with substantial land and the required crossing lengths was generated.");
         }
 
-        logger.LogInformation("Seed {Seed}: selected a map with {ContinentCount} landmasses and score {Score:F3} from {CandidateCount} candidates.",
-            seed, bestCount, bestScore, CandidateCount);
-        return best;
+        logger.LogInformation("Seed {Seed}: selected a map with {ContinentCount} landmasses and score {Score:F3} from {CandidateCount} candidates. Longest crossing: {LongestCrossing} steps; moved hex steps: {MovedCellSteps}.",
+            seed, bestCount, bestScore, CandidateCount, bestLongestCrossing, bestMovedCellSteps);
+        return new GeneratedMap(best.Cells, best.SeaLevel, MaxCrossingSteps);
     }
 
-    private static List<List<AxialCoords>> FindLandRegions(GeneratedMap map)
+    private static (GeneratedMap Map, long MovedCellSteps, double AverageCrossing, int LongestCrossing)? FitCrossings(Layout layout)
     {
-        var remaining = map.Cells.Where(cell => !map.IsWater(cell)).Select(cell => cell.Coords).ToHashSet();
-        var regions = new List<List<AxialCoords>>();
-        foreach (var cell in map.Cells)
+        var crossings = ContinentPathGenerator.FindSpanningTree(layout.Map, layout.Continents, out _);
+        if (crossings.Count != layout.Continents.Count - 1) return null;
+        if (crossings.Count == 0) return (layout.Map, 0, 0, 0);
+
+        long movedCellSteps = 0;
+        var cost = CrossingCost(crossings);
+        while (cost.Excess > 0)
         {
-            if (!remaining.Remove(cell.Coords)) continue;
-            var region = new List<AxialCoords> { cell.Coords };
-            for (int i = 0; i < region.Count; i++)
+            Layout? bestMove = null;
+            var bestCrossings = crossings;
+            var bestCost = cost;
+            int bestMoveSize = 0;
+            var cells = layout.Map.Cells.ToDictionary(cell => cell.Coords);
+            var allLand = layout.Continents.SelectMany(continent => continent).ToHashSet();
+            var movableContinents = crossings.Where(crossing => crossing.Steps.Count > MaxCrossingSteps)
+                .SelectMany(crossing => new[] { crossing.FromContinent, crossing.ToContinent })
+                .Distinct()
+                .OrderBy(index => layout.Continents[index].Count);
+
+            foreach (int index in movableContinents)
             {
-                foreach (var (q, r) in Neighbors)
+                var continent = layout.Continents[index];
+                var otherLand = allLand.Except(continent).ToHashSet();
+                var blocked = new HashSet<AxialCoords>(otherLand);
+                foreach (var hex in otherLand)
                 {
-                    var neighbor = new AxialCoords(region[i].q + q, region[i].r + r);
-                    if (remaining.Remove(neighbor)) region.Add(neighbor);
+                    foreach (var (q, r) in ContinentPathGenerator.HexNeighborOffsets)
+                        blocked.Add(new AxialCoords(hex.q + q, hex.r + r));
+                }
+
+                foreach (var (q, r) in ContinentPathGenerator.HexNeighborOffsets)
+                {
+                    var moved = MoveContinent(layout, index, q, r, cells, blocked);
+                    if (moved is null) continue;
+
+                    var movedCrossings = ContinentPathGenerator.FindSpanningTree(moved.Map, moved.Continents, out _);
+                    if (movedCrossings.Count != crossings.Count) continue;
+
+                    var movedCost = CrossingCost(movedCrossings);
+                    if (movedCost.CompareTo(bestCost) >= 0) continue;
+
+                    bestMove = moved;
+                    bestCrossings = movedCrossings;
+                    bestCost = movedCost;
+                    bestMoveSize = continent.Count;
                 }
             }
-            regions.Add(region);
+
+            if (bestMove is null) return null;
+            layout = bestMove;
+            crossings = bestCrossings;
+            cost = bestCost;
+            movedCellSteps += bestMoveSize;
         }
-        return regions;
+
+        return (layout.Map, movedCellSteps, (double)cost.Length / crossings.Count, crossings.Max(crossing => crossing.Steps.Count));
+    }
+
+    private static (int Excess, int Length) CrossingCost(IReadOnlyList<ContinentPathGenerator.Crossing> crossings)
+    {
+        return (crossings.Sum(crossing => Math.Max(0, crossing.Steps.Count - MaxCrossingSteps)),
+            crossings.Sum(crossing => crossing.Steps.Count));
+    }
+
+    private static Layout? MoveContinent(Layout layout, int index, int q, int r,
+        IReadOnlyDictionary<AxialCoords, GeneratedCell> cells, HashSet<AxialCoords> blocked)
+    {
+        var continent = layout.Continents[index];
+        var translated = new List<AxialCoords>(continent.Count);
+        var elevations = new Dictionary<AxialCoords, float>(continent.Count);
+        foreach (var hex in continent)
+        {
+            var target = new AxialCoords(hex.q + q, hex.r + r);
+            if (!cells.ContainsKey(target) || blocked.Contains(target)) return null;
+
+            translated.Add(target);
+            elevations.Add(target, cells[hex].Elevation);
+        }
+
+        var oldLand = continent.ToHashSet();
+        var map = new GeneratedMap(layout.Map.Cells.Select(cell =>
+        {
+            if (elevations.TryGetValue(cell.Coords, out float elevation)) return cell with { Elevation = elevation };
+            return oldLand.Contains(cell.Coords) ? cell with { Elevation = 0f } : cell;
+        }), layout.Map.SeaLevel);
+        var continents = layout.Continents.ToArray();
+        continents[index] = translated;
+        return new Layout(map, continents);
     }
 }
