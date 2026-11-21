@@ -6,4 +6,5 @@ public static class GameConstants
     public const int MinPlayers = 3;
     public const int InitialCampsCount = 3;
     public const int VictoryPointsToWin = 10;
+    public const int MinCountersForExplorationCart = 2;
 }

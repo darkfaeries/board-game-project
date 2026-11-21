@@ -191,29 +191,193 @@ public class BoardService : IBoardService
         return (clothReq, shelterReq);
     }
 
-    public List<ExplorationCounter> MoveExplorer(GameSession session, Guid playerId, List<AxialCoords> route)
+    public void SetExplorer(BoardState board, Guid playerId, AxialCoords to)
+    {
+        if (board.IsOccupied(to))
+            throw new GameRuleException("Target node for move explorer is occupied.");
+
+        board.ExplorerPositions.Add(to, playerId);
+    }
+    public ExplorationCounter? TakeExplorationCounter(GameSession session, AxialCoords from, AxialCoords to)
     {
         var board = session.GetGameState().Board;
 
-        var expCounters = new List<ExplorationCounter>{};
+        ExplorationCounter? expCounter = null;
 
-        for (int i = 1; i < route.Count; i++)
+        var path = new Path(from, to);
+        if (board.ExplorationPaths.TryGetValue(path, out var explorationPath) &&
+            explorationPath.ExplorationCounter != null)
         {
-            var from = route[i - 1];
-            var to = route[i];
-
-            var path = new Path(from, to);
-            if (board.ExplorationPaths.TryGetValue(path, out var explorationPath) &&
-                explorationPath.ExplorationCounter != null)
-            {
-                expCounters.Add(explorationPath.ExplorationCounter);
-                explorationPath.ExplorationCounter = null;
-            }
+            expCounter = explorationPath.ExplorationCounter;
+            explorationPath.ExplorationCounter = null;
         }
 
-        board.ExplorerPositions.Remove(route[0]);
-        board.ExplorerPositions.Add(route[^1], playerId);
 
-        return expCounters;
+        return expCounter;
     }
+
+    public bool TryMoveEnemy(GameSession session, EnemyType enemyType, AxialCoords? destination)
+    {
+        var board = session.GetGameState().Board;
+        if (destination == null)
+        {
+            _logger.LogWarning(
+                "Enemy move rejected in session {SessionCode}: {EnemyType}; destination is null.",
+                session.Code, enemyType
+            );
+            return false;
+        }
+
+        if (!Enum.IsDefined(enemyType))
+        {
+            _logger.LogWarning(
+                "Enemy move rejected in session {SessionCode}: {EnemyType} to ({Q}, {R}); invalid enemy type.",
+                session.Code, enemyType, destination.q, destination.r
+            );
+            return false;
+        }
+
+        if (!board.Hexes.TryGetValue(destination, out var hex))
+        {
+            _logger.LogWarning(
+                "Enemy move rejected in session {SessionCode}: {EnemyType} to ({Q}, {R}); hex not found.",
+                session.Code, enemyType, destination.q, destination.r
+            );
+            return false;
+        }
+
+        if (!IsEnemyRegion(enemyType, hex.Region))
+        {
+            _logger.LogWarning(
+                "Enemy move rejected in session {SessionCode}: {EnemyType} to ({Q}, {R}); region not allowed.",
+                session.Code, enemyType, destination.q, destination.r
+            );
+            return false;
+        }
+
+        if (Equals(destination, GetEnemyPosition(board, enemyType)))
+        {
+            _logger.LogWarning(
+                "Enemy move rejected in session {SessionCode}: {EnemyType} to ({Q}, {R}); enemy already at destination.",
+                session.Code, enemyType, destination.q, destination.r
+            );
+            return false;
+        }
+
+        if (enemyType == EnemyType.Neanderthal)
+            board.NeanderthalPosition = destination;
+        else
+            board.SabertoothTigerPosition = destination;
+
+        _logger.LogInformation(
+            "Enemy moved in session {SessionCode}: {EnemyType} to ({Q}, {R}).",
+            session.Code, enemyType, destination.q, destination.r
+        );
+        return true;
+    }
+
+    public bool IsEnemyAt(GameSession session, EnemyType enemyType, AxialCoords? destination)
+    {
+        var board = session.GetGameState().Board;
+        return destination != null && Enum.IsDefined(enemyType) &&
+            board.Hexes.TryGetValue(destination, out var hex) &&
+            IsEnemyRegion(enemyType, hex.Region) &&
+            Equals(destination, GetEnemyPosition(board, enemyType));
+    }
+
+    public IReadOnlyCollection<Guid> GetAdjacentCampOwnerIds(GameSession session, AxialCoords destination)
+    {
+        var board = session.GetGameState().Board;
+        var neighbors = destination.HexGetNeighbors();
+        return board.CampPositions
+            .Where(camp => neighbors.Contains(camp.Key))
+            .Select(camp => camp.Value)
+            .Distinct()
+            .ToArray();
+    }
+
+    public bool HasDesertificationTarget(GameSession session, TerrainType terrain)
+    {
+        var board = session.GetGameState().Board;
+        return Enum.IsDefined(terrain) && board.Hexes.Values.Any(hex =>
+            hex.Region == Region.Africa && hex.Terrain == terrain && !hex.IsDesertified);
+    }
+
+    public bool TryDesertifyHex(GameSession session, TerrainType terrain, AxialCoords? hexCoords)
+    {
+        var board = session.GetGameState().Board;
+        if (hexCoords == null)
+        {
+            _logger.LogWarning(
+                "Desertification rejected in session {SessionCode}: {Terrain} at ({Q}, {R}); coordinates are null.",
+                session.Code, terrain, hexCoords?.q, hexCoords?.r
+            );
+            return false;
+        }
+
+        if (!Enum.IsDefined(terrain))
+        {
+            _logger.LogWarning(
+                "Desertification rejected in session {SessionCode}: {Terrain} at ({Q}, {R}); invalid terrain type.",
+                session.Code, terrain, hexCoords.q, hexCoords.r
+            );
+            return false;
+        }
+
+        if (!board.Hexes.TryGetValue(hexCoords, out var hex))
+        {
+            _logger.LogWarning("Desertification rejected in session {SessionCode}: {Terrain} at ({Q}, {R}); hex not found.",
+                session.Code, terrain, hexCoords.q, hexCoords.r
+            );
+            return false;
+        }
+
+        if (hex.Region != Region.Africa)
+        {
+            _logger.LogWarning(
+                "Desertification rejected in session {SessionCode}: {Terrain} at ({Q}, {R}); hex is not in Africa.",
+                session.Code, terrain, hexCoords.q, hexCoords.r
+            );
+            return false;
+        }
+
+        if (hex.Terrain != terrain)
+        {
+            _logger.LogWarning(
+                "Desertification rejected in session {SessionCode}: {Terrain} at ({Q}, {R}); terrain does not match.",
+                session.Code, terrain, hexCoords.q, hexCoords.r
+            );
+            return false;
+        }
+
+        if (hex.IsDesertified)
+        {
+            _logger.LogWarning(
+                "Desertification rejected in session {SessionCode}: {Terrain} at ({Q}, {R}); hex is already desertified.",
+                session.Code, terrain, hexCoords.q, hexCoords.r
+            );
+            return false;
+        }
+
+        hex.IsDesertified = true;
+        _logger.LogInformation(
+            "Hex desertified in session {SessionCode}: {Terrain} at ({Q}, {R}).",
+            session.Code, terrain, hexCoords.q, hexCoords.r
+        );
+        return true;
+    }
+
+    private static bool IsEnemyRegion(EnemyType enemyType, Region region) => enemyType switch
+    {
+        EnemyType.Neanderthal => region is Region.Africa or Region.Eurasia,
+        EnemyType.SabertoothTiger => region is Region.America or Region.Australia,
+        _ => false
+    };
+
+    private static AxialCoords? GetEnemyPosition(BoardState board, EnemyType enemyType) => enemyType switch
+    {
+        EnemyType.Neanderthal => board.NeanderthalPosition,
+        EnemyType.SabertoothTiger => board.SabertoothTigerPosition,
+        _ => null
+    };
 }

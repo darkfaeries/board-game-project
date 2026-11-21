@@ -11,5 +11,24 @@ public interface IGameService
         Dictionary<ResourceType, int> selectedResources);
     void ConvertExplorerToCamp(GameSession session, Guid playerId, AxialCoords nodeCoords);
     void CreateExplorer(GameSession session, Guid playerId, AxialCoords nodeCoords);
-    void MoveExplorer(GameSession session, Guid playerId, List<AxialCoords> route);
+    MoveResult MoveExplorer(GameSession session, Guid playerId, List<AxialCoords> route);
+    bool SubmitChooseEnemy(GameSession session, Guid playerId, Guid decisionId, EnemyType enemyType);
+    (bool isSuccess, MoveResult? moveResult) SubmitChooseEnemyDestination(
+        GameSession session,
+        Guid playerId,
+        Guid decisionId,
+        AxialCoords? destination
+    );
+    (bool isSuccess, MoveResult? moveResult) SubmitChooseStealTarget(
+        GameSession session,
+        Guid playerId,
+        Guid decisionId,
+        Guid? targetPlayerId
+    );
+    (bool isSuccess, MoveResult? moveResult) SubmitChooseDesertificationHex(
+        GameSession session,
+        Guid playerId,
+        Guid decisionId,
+        AxialCoords? hexCoords
+    );
 }

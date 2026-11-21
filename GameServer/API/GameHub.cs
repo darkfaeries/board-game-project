@@ -180,51 +180,61 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        if (session.GetGameState().Phase != TurnPhase.Roll)
+        int diceRoll;
+        object? sevenRolled = null;
+        lock (session.Gate)
         {
-            _logger.LogCritical($"Failed to execute Roll Phase : player {playerId} cannot roll dice in phase {session.GetGameState().Phase}");
-            throw new HubException($"Cannot roll dice in phase {session.GetGameState().Phase}");
-        }
+            if (session.GetGameState().PendingExplorerMove != null)
+                throw new HubException("Pending Explorer move not finished.");
 
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player doesn't exist");
-
-        EnsureCurrentPlayer(session, player);
-        if (playerId != player.Id)
-        {
-            _logger.LogWarning($"Player {player.Id} supplied another player ID for rolling.");
-            throw new HubException("Invalid player ID.");
-        }
-
-        var diceRoll = session.RollDice();
-        if (diceRoll == -1)
-        {
-            _logger.LogCritical($"Failed to roll dice: player {player.Name} cannot roll dice in phase {session.GetGameState().Phase}");
-            throw new HubException($"Cannot roll dice in phase {session.GetGameState().Phase}");
-        }
-
-        if (diceRoll == 7)
-        {
-            _gameService.OnSevenRolled(session);
-            await Clients.Group(code).SendAsync("SevenRolled", new
+            if (session.GetGameState().Phase != TurnPhase.Roll)
             {
-                PlayerId = playerId,
-                DiceRoll = diceRoll,
-                PendingDecisions = session.GetGameState().PendingDecisions
-                    .Select(d => new
-                    {
-                        d.PlayerId,
-                        DecisionType = d.GetType().Name,
-                        RequiredCount = d is DiscardResourcesDecision discard
-                            ? discard.RequiredCount
-                            : 0
-                    })
-            });
+                _logger.LogCritical($"Failed to execute Roll Phase : player {playerId} cannot roll dice in phase {session.GetGameState().Phase}");
+                throw new HubException($"Cannot roll dice in phase {session.GetGameState().Phase}");
+            }
+
+            var player = session.GetPlayers()
+                        .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
+                        ?? throw new HubException("Player doesn't exist");
+
+            EnsureCurrentPlayer(session, player);
+            if (playerId != player.Id)
+            {
+                _logger.LogWarning($"Player {player.Id} supplied another player ID for rolling.");
+                throw new HubException("Invalid player ID.");
+            }
+
+            diceRoll = session.RollDice();
+            if (diceRoll == -1)
+            {
+                _logger.LogCritical($"Failed to roll dice: player {player.Name} cannot roll dice in phase {session.GetGameState().Phase}");
+                throw new HubException($"Cannot roll dice in phase {session.GetGameState().Phase}");
+            }
+
+            if (diceRoll == 7)
+            {
+                _gameService.OnSevenRolled(session);
+                sevenRolled = new
+                {
+                    PlayerId = playerId,
+                    DiceRoll = diceRoll,
+                    PendingDecisions = session.GetGameState().PendingDecisions
+                        .Select(d => new
+                        {
+                            d.PlayerId,
+                            DecisionType = d.GetType().Name,
+                            RequiredCount = d is DiscardResourcesDecision discard
+                                ? discard.RequiredCount
+                                : 0
+                        }).ToArray()
+                };
+            }
+            else
+                _playerService.DistributeHexResources(session, diceRoll);
         }
-        
-        else 
-            _playerService.DistributeHexResources(session, diceRoll);
+
+        if (sevenRolled != null)
+            await Clients.Group(code).SendAsync("SevenRolled", sevenRolled);
 
         await Clients.Group(code).SendAsync("RollPhaseCompleted", new
         {
@@ -278,37 +288,44 @@ class GameHub : Hub
             throw new HubException("SessionId doesn`t exist");
         }
 
-        if (session.GetGameState().Phase != TurnPhase.Trade)
+        Player player;
+        lock (session.Gate)
         {
-            _logger.LogCritical($"Failed to execute Trade Phase : player cannot trade in phase {session.GetGameState().Phase}");
-            throw new HubException($"Cannot trade in phase {session.GetGameState().Phase}");
+            if (session.GetGameState().PendingExplorerMove != null)
+                throw new HubException("Pending Explorer move not finished.");
+
+            if (session.GetGameState().Phase != TurnPhase.Trade)
+            {
+                _logger.LogCritical($"Failed to execute Trade Phase : player cannot trade in phase {session.GetGameState().Phase}");
+                throw new HubException($"Cannot trade in phase {session.GetGameState().Phase}");
+            }
+
+            player = session.GetPlayers()
+                        .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
+                        ?? throw new HubException("Player doesn't exist");
+            EnsureCurrentPlayer(session, player);
+
+            if (targetPlayerId == player.Id)
+            {
+                _logger.LogWarning($"Player {player.Id} attempted to trade with themselves.");
+                throw new HubException("You cannot trade with yourself.");
+            }
+
+            if (session.GetGameState().GetPlayer(targetPlayerId) == null)
+            {
+                _logger.LogWarning($"Trade target {targetPlayerId} was not found.");
+                throw new HubException("Target player was not found.");
+            }
+
+            if (!player.Resources.CanAfford(offer))
+            {
+                _logger.LogCritical($"Failed to execute Trade Phase: not enough resources to spend for player {player.Name}");
+                throw new HubException("Not enough resources to spend");
+            }
+
+            _playerService.AddResources(session, targetPlayerId, offer);
+            _playerService.SpendResources(session, player.Id, offer);
         }
-
-        var player = session.GetPlayers()
-                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
-                    ?? throw new HubException("Player doesn't exist");
-        EnsureCurrentPlayer(session, player);
-
-        if (targetPlayerId == player.Id)
-        {
-            _logger.LogWarning($"Player {player.Id} attempted to trade with themselves.");
-            throw new HubException("You cannot trade with yourself.");
-        }
-
-        if (session.GetGameState().GetPlayer(targetPlayerId) == null)
-        {
-            _logger.LogWarning($"Trade target {targetPlayerId} was not found.");
-            throw new HubException("Target player was not found.");
-        }
-
-        if (!player.Resources.CanAfford(offer))
-        {
-            _logger.LogCritical($"Failed to execute Trade Phase: not enough resources to spend for player {player.Name}");
-            throw new HubException("Not enough resources to spend");
-        }
-
-        _playerService.AddResources(session, targetPlayerId, offer);
-        _playerService.SpendResources(session, player.Id, offer);
 
         await Clients.Group(code).SendAsync("TradePhaseCompleted", new
         {
@@ -452,14 +469,15 @@ class GameHub : Hub
 
         try
         {
-            _gameService.MoveExplorer(session, player.Id, route);
+            var result = _gameService.MoveExplorer(session, player.Id, route);
+            await Clients.Group(code).SendAsync(
+                "ExplorerMoved", new { player.Id, result.Route, result.DecisionRequired }
+            );
         }
         catch (GameRuleException ex)
         {
             throw new HubException(ex.Message);
         }
-
-        await Clients.Group(code).SendAsync("ExplorerMoved", new { player.Id, route });
     }
 
     public async Task AdvanceProgress(string code, ProgressType progressType)
