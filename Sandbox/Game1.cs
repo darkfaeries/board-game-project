@@ -18,9 +18,8 @@ public class Game1 : Game
     private BasicEffect _effect;
     private SpriteBatch _spriteBatch;
     private SpriteFont _numberFont;
-    private static readonly MapType SelectedMapType = MapType.Earth;
-    private static readonly MapGenerationOptions HeightMapOptions = new(40, 24, 0.45f);
-    // Temporary coastline approximation: low land at elevation zero is also hidden.
+    private readonly MapType _selectedMapType;
+    private static readonly MapGenerationOptions HeightMapOptions = new(40, 24, 0.5f);
     private static readonly MapGenerationOptions EarthMapOptions = new(56, 20, 1f / 255f);
     private readonly int _mapSeed;
     private readonly IHeightSource _earthHeights;
@@ -32,7 +31,7 @@ public class Game1 : Game
     private Vector2 _boardMin;
     private Vector2 _boardMax;
 
-    public Game1(ILoggerFactory loggerFactory, int seed, IHeightSource earthHeights)
+    public Game1(ILoggerFactory loggerFactory, int seed, IHeightSource earthHeights, MapType mapType)
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _loggerFactory = loggerFactory;
@@ -48,11 +47,12 @@ public class Game1 : Game
         _graphics.PreferMultiSampling = true;
         _graphics.PreparingDeviceSettings += (_, e) =>
             e.GraphicsDeviceInformation.PresentationParameters.MultiSampleCount = 8;
+        _selectedMapType = mapType;
     }
 
     protected override void Initialize()
     {
-        switch (SelectedMapType)
+        switch (_selectedMapType)
         {
             case MapType.Classic:
             {
@@ -61,16 +61,15 @@ public class Game1 : Game
 
                 IBoardFactory factory = new BoardFactory(
                     _loggerFactory.CreateLogger<BoardFactory>(),
-                    csvGenerator);
+                    csvGenerator, _earthHeights, _loggerFactory);
 
-                _board = factory.GetBoardState(SelectedMapType);
+                _board = factory.GetBoardState(_selectedMapType);
                 break;
             }
             case MapType.BySeed:
             {
-                IHeightSource heights = new NoiseHeightSource(_mapSeed, _loggerFactory.CreateLogger<NoiseHeightSource>());
-                _generatedMap = new MapGenerator().Generate(
-                    HeightMapOptions, heights, _loggerFactory.CreateLogger<MapGenerator>());
+                _generatedMap = new SeedMapGenerator().Generate(
+                    HeightMapOptions, _mapSeed, _loggerFactory.CreateLogger<SeedMapGenerator>());
                 _logger.LogInformation("Generated {HexCount} hexes with seed {Seed}.", _generatedMap.Cells.Count, _mapSeed);
                 break;
             }
@@ -88,8 +87,8 @@ public class Game1 : Game
                 break;
             }
             default:
-                _logger.LogError("Invalid map type: {MapType}.", SelectedMapType);
-                throw new ArgumentOutOfRangeException(nameof(SelectedMapType), SelectedMapType, "Invalid map type.");
+                _logger.LogError("Invalid map type: {MapType}.", _selectedMapType);
+                throw new ArgumentOutOfRangeException(nameof(_selectedMapType), _selectedMapType, "Invalid map type.");
         }
 
         base.Initialize();

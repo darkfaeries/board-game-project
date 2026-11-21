@@ -71,14 +71,14 @@ class GameHub : Hub
         });
     }
 
-    public async Task<string> CreateSession(MapType mapType)
+    public async Task<string> CreateSession(MapType mapType, int? seed = null)
     {
         if (!Enum.IsDefined(typeof(MapType), mapType))
         {
             _logger.LogError($"Invalid map type: {mapType}");
             throw new HubException("Invalid map type");
         }
-        var session = _store.CreateSession(mapType);
+        var session = _store.CreateSession(mapType, seed);
 
         await Groups.AddToGroupAsync(Context.ConnectionId, session.Code.ToString());
         return session.Code;

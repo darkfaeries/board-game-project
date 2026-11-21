@@ -98,6 +98,8 @@ builder.Services.AddSingleton<ArrayHeightSource>(services =>
     return new ArrayHeightSource(loggerArrayHeightSource, heights);
 });
 
+builder.Services.AddSingleton<IHeightSource>(services => services.GetRequiredService<ArrayHeightSource>());
+
 var app = builder.Build();
 
 app.UseAuthentication();

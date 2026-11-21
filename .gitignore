@@ -4,3 +4,4 @@ bin/
 obj/
 logs/
 .env
+GameServer/MapGeneration/Templates/Earth/topography.tif

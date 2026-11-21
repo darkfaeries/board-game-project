@@ -3,9 +3,9 @@ namespace GameServer;
 public class NoiseHeightSource : IHeightSource
 {
     public int Seed { get; }
-    private ILogger _logger;
+    private readonly ILogger _logger;
 
-    public NoiseHeightSource(int seed,  ILogger logger)
+    public NoiseHeightSource(int seed, ILogger logger)
     {
         Seed = seed;
         _logger = logger;
@@ -25,18 +25,16 @@ public class NoiseHeightSource : IHeightSource
             throw new ArgumentOutOfRangeException(nameof(v), "v must be between 0 and 1");
         }
 
-        float sum = 0;
-        float weights = 0;
-        float amplitude = 1;
-        float frequency = 4;
-        for (int octave = 0; octave < 5; octave++)
-        {
-            sum += SmoothNoise(u * frequency, v * frequency) * amplitude;
-            weights += amplitude;
-            frequency *= 2;
-            amplitude *= 0.5f;
-        }
-        return Math.Clamp(sum / weights, 0, 1);
+        float x = u * 5f + (SmoothNoise(u * 3f + 17f, v * 3f + 31f) - 0.5f) * 1.4f;
+        float y = v * 4f + (SmoothNoise(u * 3f + 47f, v * 3f + 13f) - 0.5f) * 1.4f;
+        float height = 0.70f * SmoothNoise(x, y)
+                     + 0.22f * SmoothNoise(x * 2f + 53f, y * 2f + 71f)
+                     + 0.08f * SmoothNoise(x * 4f + 89f, y * 4f + 97f);
+
+        float edgeDistance = MathF.Min(MathF.Min(u, 1f - u), MathF.Min(v, 1f - v));
+        float edge = Math.Clamp(edgeDistance / 0.12f, 0f, 1f);
+        edge = edge * edge * (3f - 2f * edge);
+        return Math.Clamp(height - (1f - edge), 0f, 1f);
     }
 
     private float SmoothNoise(float x, float y)
