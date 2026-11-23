@@ -312,9 +312,57 @@ class GameHub : Hub
         });
     }
 
+    public async Task SubmitTradeDecision(
+        string code, Guid playerId, Guid tradeId, bool isAccepted
+        )
+    {
+        var session = _store.GetSession(code);
+        if (session == null)
+        {
+            _logger.LogCritical($"Failed to execute Trade Phase : session with id {code} doesn`t exist");
+            throw new HubException("SessionId doesn`t exist");
+        }
+
+        var userId = GetUserIdFromContext();
+        var player = session.GetGameState().GetPlayer(userId);
+
+        if (player == null)
+        {
+            _logger.LogWarning($"Player with user ID {userId} not found in session {code}.");
+            throw new HubException("Player not found.");
+        }
+
+        var decision = session.GetGameState().PendingDecisions
+            .FirstOrDefault(d => d is TradeDecision tradeDecision 
+            && tradeDecision.TradeId == tradeId && tradeDecision.TargetPlayerId == player.Id);
+
+        if (decision == null)
+        {
+            _logger.LogWarning($"Player {player.Id} attempted to submit a trade decision without a pending decision.");
+            throw new HubException("You do not have a pending decision to submit a trade.");
+        }
+
+        var result = _gameService.SubmitTradeDecision(session, tradeId, isAccepted);
+
+        if (!result)
+        {
+            _logger.LogWarning($"Failed to submit trade decision for player {player.Id}.");
+            throw new HubException($"Failed to submit trade decision for player {player.Id}.");
+        }
+
+        await Clients.Group(code).SendAsync("TradeDecisionSubmitted", new
+        {
+            SourcePlayerId = playerId,
+            TargetPlayerId = player.Id,
+            TradeId = tradeId,
+            IsAccepted = isAccepted
+        });
+    }
+
     public async Task TradeWithPlayer(
-        string code, Guid targetPlayerIdOrBank,
-        Dictionary<ResourceType, int> offer
+        string code, Guid targetPlayerId,
+        Dictionary<ResourceType, int> offeredResources,
+        Dictionary<ResourceType, int> requestedResources
         )
     {
         var session = _store.GetSession(code);
@@ -340,32 +388,28 @@ class GameHub : Hub
         }
         EnsureCurrentPlayer(session, player);
 
-        if (targetPlayerIdOrBank == player.Id)
+        if (targetPlayerId == player.Id)
         {
             _logger.LogWarning($"Player {player.Id} attempted to trade with themselves.");
             throw new HubException("You cannot trade with yourself.");
         }
 
-        if (session.GetGameState().GetPlayer(targetPlayerIdOrBank) == null)
+        if (session.GetGameState().GetPlayer(targetPlayerId) == null)
         {
-            _logger.LogWarning($"Trade target {targetPlayerIdOrBank} was not found.");
+            _logger.LogWarning($"Trade target {targetPlayerId} was not found.");
             throw new HubException("Target player was not found.");
         }
 
-        if (!player.Resources.CanAfford(offer))
-        {
-            _logger.LogCritical($"Failed to execute Trade Phase: not enough resources to spend for player {player.Name}");
-            throw new HubException("Not enough resources to spend");
-        }
+        var tradeId = _gameService.TradeWithPlayer(
+            session, player.Id, targetPlayerId, offeredResources, requestedResources);
 
-        _playerService.AddResources(session, targetPlayerIdOrBank, offer);
-        _playerService.SpendResources(session, player.Id, offer);
-
-        await Clients.Group(code).SendAsync("PlayerTradePhaseCompleted", new
+        await Clients.Group(code).SendAsync("PlayerTradeRequested", new
         {
             Source = player.Id,
-            target = targetPlayerIdOrBank,
-            Offer = offer
+            Target = targetPlayerId,
+            Offer = offeredResources,
+            Request = requestedResources,
+            TradeId = tradeId
         });
     }
 

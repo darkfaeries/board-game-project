@@ -28,8 +28,9 @@ public class GameClient : IAsyncDisposable
     public event Action<TurnChangedEvent>? TurnChanged;
     public event Action<SevenRolledEvent>? SevenRolled;
     public event Action<DiscardResourcesSubmittedEvent>? DiscardResourcesSubmitted;
+    public event Action<TradeDecisionSubmittedEvent>? TradeDecisionSubmitted;
     public event Action<RollPhaseCompletedEvent>? RollPhaseCompleted;
-    public event Action<PlayerTradePhaseCompletedEvent>? PlayerTradePhaseCompleted;
+    public event Action<PlayerTradeRequestedEvent>? PlayerTradeRequested;
     public event Action<BankTradeCompletedEvent>? BankTradeCompleted;
     public event Action<ExplorerCreatedEvent>? ExplorerCreated;
     public event Action<ExplorerMovedEvent>? ExplorerMoved;
@@ -186,12 +187,16 @@ public class GameClient : IAsyncDisposable
         InvokeGameMethodAsync("RollPhase", false, playerId);
 
     public Task<(bool Ok, string? Error)> DiscardResourcesDecisionAsync(
-        Guid playerId, Dictionary<ResourceType, int> selectedResources) =>
+        Dictionary<ResourceType, int> selectedResources) =>
         InvokeGameMethodAsync("DiscardResourcesDecision", false, selectedResources);
 
+    public Task<(bool Ok, string? Error)> SubmitTradeDecisionAsync(
+        Guid playerId, Guid tradeId, bool isAccepted) =>
+        InvokeGameMethodAsync("SubmitTradeDecision", false, playerId, tradeId, isAccepted);
+
     public Task<(bool Ok, string? Error)> TradeWithPlayerAsync(
-        Guid targetPlayerId, Dictionary<ResourceType, int> offer) =>
-        InvokeGameMethodAsync("TradeWithPlayer", false, targetPlayerId, offer);
+        Guid targetPlayerId, Dictionary<ResourceType, int> offer, Dictionary<ResourceType, int> request) =>
+        InvokeGameMethodAsync("TradeWithPlayer", false, targetPlayerId, offer, request);
 
     public Task<(bool Ok, string? Error)> TradeWithBankAsync(
         Dictionary<ResourceType, int> resourcesToGive,
@@ -299,10 +304,13 @@ public class GameClient : IAsyncDisposable
         _hub.On<DiscardResourcesSubmittedEvent>(
             "DiscardResourcesSubmitted", 
             value => DiscardResourcesSubmitted?.Invoke(value));
+        _hub.On<TradeDecisionSubmittedEvent>(
+            "TradeDecisionSubmitted",
+            value => TradeDecisionSubmitted?.Invoke(value));
         _hub.On<RollPhaseCompletedEvent>("RollPhaseCompleted", value => RollPhaseCompleted?.Invoke(value));
-        _hub.On<PlayerTradePhaseCompletedEvent>(
-            "PlayerTradePhaseCompleted",
-            value => PlayerTradePhaseCompleted?.Invoke(value));
+        _hub.On<PlayerTradeRequestedEvent>(
+            "PlayerTradeRequested",
+            value => PlayerTradeRequested?.Invoke(value));
         _hub.On<BankTradeCompletedEvent>("BankTradeCompleted", value => BankTradeCompleted?.Invoke(value));
         _hub.On<ExplorerCreatedEvent>("ExplorerCreated", value => ExplorerCreated?.Invoke(value));
         _hub.On<ExplorerMovedEvent>("ExplorerMoved", value => ExplorerMoved?.Invoke(value));
@@ -400,10 +408,12 @@ public sealed record PlayerDto(Guid Id, string Name);
 public sealed record GameStartedEvent(Guid? CurrentPlayerId, TurnPhase CurrentPhase);
 public sealed record TurnChangedEvent(Guid NextPlayerId, string NextPlayerUsername);
 public sealed record RollPhaseCompletedEvent(Guid PlayerId, int DiceRoll);
-public sealed record PlayerTradePhaseCompletedEvent(
+public sealed record PlayerTradeRequestedEvent(
     Guid Source,
     Guid Target,
-    Dictionary<ResourceType, int> Offer);
+    Dictionary<ResourceType, int> Offer,
+    Dictionary<ResourceType, int> Request,
+    Guid TradeId);
 
 public sealed record BankTradeCompletedEvent(
     Guid PlayerId,
@@ -418,6 +428,11 @@ public sealed record WinnerCheckedEvent(Guid Id);
 public sealed record SevenRolledEvent(Guid Id, int DiceRoll, List<PendingDecisionEvent> PendingDecisions);
 public sealed record PendingDecisionEvent(Guid PlayerId, string DecisionType, int RequiredCount);
 public sealed record DiscardResourcesSubmittedEvent(Guid Id);
+public sealed record TradeDecisionSubmittedEvent(
+    Guid SourcePlayerId,
+    Guid TargetPlayerId,
+    Guid TradeId,
+    bool IsAccepted);
 public sealed record PlayerReconnectedEvent(string code);
 public sealed record InitialPlacementSubmittedEvent(
     Guid PlayerId,
