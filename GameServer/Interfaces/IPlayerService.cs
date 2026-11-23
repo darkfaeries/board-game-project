@@ -14,6 +14,13 @@ public interface IPlayerService
         Dictionary<ResourceType, int> resourcesToGive,
         ResourceType resourceToGet);
 
+    bool TradeWithPlayer(
+        GameSession session,
+        Guid sourcePlayerId,
+        Guid targetPlayerId,
+        Dictionary<ResourceType, int> offeredResources,
+        Dictionary<ResourceType, int> requestedResources);
+
     (bool IsSuccess, string ErrorMessage) ConvertExplorerToCamp(
         GameSession session, Guid playerId, AxialCoords nodeCoords);
     (bool IsSuccess, string ErrorMessage) CreateExplorer(

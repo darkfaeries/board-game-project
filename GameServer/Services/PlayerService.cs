@@ -108,6 +108,45 @@ public class PlayerService : IPlayerService
         _logger.LogInformation($"Player {playerId} completed a bank trade.");
     }
 
+    public bool TradeWithPlayer(
+        GameSession session,
+        Guid sourcePlayerId,
+        Guid targetPlayerId,
+        Dictionary<ResourceType, int> offeredResources,
+        Dictionary<ResourceType, int> requestedResources)
+    {
+        var state = session.GetGameState();
+        var sourcePlayer = state.GetPlayer(sourcePlayerId);
+        var targetPlayer = state.GetPlayer(targetPlayerId);
+
+        if (sourcePlayer == null || targetPlayer == null)
+        {
+            _logger.LogWarning($"One or both players not found for trade: {sourcePlayerId}, {targetPlayerId}.");
+            return false;
+        }
+
+        if (!sourcePlayer.Resources.CanAfford(offeredResources))
+        {
+            _logger.LogWarning($"Source player {sourcePlayerId} cannot afford the offered resources.");
+            return false;
+        }
+
+        if (!targetPlayer.Resources.CanAfford(requestedResources))
+        {
+            _logger.LogWarning($"Target player {targetPlayerId} cannot afford the requested resources.");
+            return false;
+        }
+
+        SpendResources(session, sourcePlayerId, offeredResources);
+        AddResources(session, sourcePlayerId, requestedResources);
+
+        SpendResources(session, targetPlayerId, requestedResources);
+        AddResources(session, targetPlayerId, offeredResources);
+
+        _logger.LogInformation($"Trade completed between players {sourcePlayerId} and {targetPlayerId}.");
+        return true;
+    }
+
     public (bool IsSuccess, string ErrorMessage) ConvertExplorerToCamp(
         GameSession session, Guid playerId, AxialCoords nodeCoords)
     {
