@@ -330,7 +330,7 @@ public class PlayerService : IPlayerService
             throw new KeyNotFoundException($"Player with ID {playerId} not found.");
         }
 
-        var isWinner = state.CalculateVictoryPoints(playerId);
+        var isWinner = session.CalculateVictoryPoints(playerId);
         _logger.LogInformation($"Checked win condition for player {playerId}: {isWinner}.");
         return isWinner;
     }
