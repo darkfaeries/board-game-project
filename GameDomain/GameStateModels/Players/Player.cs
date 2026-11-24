@@ -11,7 +11,8 @@ public class Player
     public PlayerColor Color { get; }
     public ResourceInventory Resources { get; set; } = new ResourceInventory();
     public ProgressState Progress { get; set; } = new ProgressState();
-    public int TribeCounterNumber { get; set; }
+    public List<AxialCoords> CampPositions { get; set; } = new List<AxialCoords>();
+    public List<AxialCoords> ExplorerPositions { get; set; } = new List<AxialCoords>();
     public List<Tribe> TribesCollected { get; } = new List<Tribe>();
     public List<ExplorationCounter> ExplorationCounters { get; } = new List<ExplorationCounter>();
 

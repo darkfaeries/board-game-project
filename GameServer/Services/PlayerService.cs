@@ -108,6 +108,7 @@ public class PlayerService : IPlayerService
         _logger.LogInformation($"Player {playerId} completed a bank trade.");
     }
 
+
     public (bool IsSuccess, string ErrorMessage) AdvanceProgress(
         GameSession session, Guid playerId, ProgressType progressType)
     {
@@ -150,14 +151,14 @@ public class PlayerService : IPlayerService
             throw new KeyNotFoundException($"Player with ID {playerId} not found.");
         }
 
-        var isWinner = state.CalculateVictoryPoints(playerId) >= GameConstants.VictoryPointsToWin;
+        var isWinner = session.CalculateVictoryPoints(playerId);
         _logger.LogInformation($"Checked win condition for player {playerId}: {isWinner}.");
         return isWinner;
     }
 
     private void ValidateResourceAmounts(Dictionary<ResourceType, int> resources)
     {
-        if (resources == null || resources.Count == 0 ||
+        if (resources.Count == 0 ||
             resources.Any(resource => resource.Value <= 0))
         {
             _logger.LogWarning("Invalid resource amounts supplied.");
@@ -197,7 +198,7 @@ public class PlayerService : IPlayerService
     {
         int currentLevel = player!.Progress.GetLevel(progressType);
 
-        if (currentLevel >= 5)
+        if (currentLevel >= GameConstants.MaxProgressLevel)
             return false;
 
         int targetLevel = currentLevel + 1;

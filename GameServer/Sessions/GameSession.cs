@@ -152,4 +152,37 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
 
     public Player[] GetPlayers() => gameState.Players.ToArray();
     public GameState GetGameState() => gameState;
+    public bool CalculateVictoryPoints(Guid playerId)
+    {
+        int victoryPoints = 0;
+        var player = gameState.GetPlayer(playerId);
+        if (player == null) return false;
+        victoryPoints += player.TribesCollected.Count;
+        foreach (ProgressType progressType in Enum.GetValues<ProgressType>())
+        {
+            if (player.Progress.GetLevel(progressType) == GameConstants.MaxProgressLevel)
+            {
+                victoryPoints += 1;
+            }
+        }
+        foreach (var counter in player.ExplorationCounters)
+        {
+            if (counter is AdaptationCounter)
+            {
+                victoryPoints += 1;
+            }
+        }
+
+        if (gameState.Victory.ExplorationCardOwnerId == playerId)
+        {
+            victoryPoints += 2;
+        }
+
+        if (gameState.Victory.ExpansionCardOwnerId == playerId)
+        {
+            victoryPoints += 2;
+        }
+        
+        return victoryPoints >= GameConstants.VictoryPointsToWin;
+    }
 }

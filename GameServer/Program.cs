@@ -54,14 +54,9 @@ builder.Services.AddSwaggerGen(options =>
 
 
 builder.Services.AddSingleton<IGameStore, GameStore>();
+builder.Services.AddSingleton<IBoardFactory, BoardFactory>();
+builder.Services.AddSingleton<CsvBoardGenerator>();
 builder.Services.AddSingleton<ConnectionManager>();
-builder.Services.AddSingleton<IBoardFactory>(serviceProvider =>
-{
-    var mapsPath = System.IO.Path.Combine(
-        AppContext.BaseDirectory, "GameFiles", "Maps");
-    var logger = serviceProvider.GetRequiredService<ILogger<BoardFactory>>();
-    return new BoardFactory(mapsPath, logger);
-});
 builder.Services.AddTransient<IBoardService>(serviceProvider =>
 {
     var mapsPath = System.IO.Path.Combine(AppContext.BaseDirectory, "GameFiles", "Maps");
