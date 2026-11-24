@@ -45,6 +45,9 @@ builder.Services.AddTransient<IGameService, GameService>();
 builder.Services.AddTransient<IRepository<User>, UserRepository>();
 builder.Services.AddSignalR();
 
+builder.Services.AddScoped<IFriendshipStore, EfFriendshipStore>();
+builder.Services.AddScoped<IFriendService, FriendService>();
+
 builder.Services.AddDbContext<UserDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
