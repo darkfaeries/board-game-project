@@ -13,7 +13,6 @@ public class Player
     public ProgressState Progress { get; set; } = new ProgressState();
     public List<AxialCoords> CampPositions { get; set; } = new List<AxialCoords>();
     public List<AxialCoords> ExplorerPositions { get; set; } = new List<AxialCoords>();
-    public int TribeCounterNumber { get; set; }
     public List<Tribe> TribesCollected { get; } = new List<Tribe>();
     public List<ExplorationCounter> ExplorationCounters { get; } = new List<ExplorationCounter>();
 
