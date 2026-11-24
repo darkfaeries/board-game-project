@@ -5,8 +5,8 @@ using GameServer;
 namespace WebAPI.API.V1;
 
 [ApiController]
+[Authorize]
 [Route("api/sessions")]
-[AllowAnonymous]
 public class SessionController(IGameStore store) : ControllerBase
 {
     [HttpGet("{code}")]

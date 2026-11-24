@@ -20,7 +20,7 @@ public class GameState
     };
     public BoardState Board { get; }
     public VictoryState Victory { get; set; } = new VictoryState();
-    public PendingDecision[] PendingDecisions { get; set; } = Array.Empty<PendingDecision>();
+    public List<PendingDecision> PendingDecisions { get; set; } = new();
 
     public GameState(BoardState board)
     {
