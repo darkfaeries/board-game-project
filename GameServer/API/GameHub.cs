@@ -291,7 +291,6 @@ class GameHub : Hub
             _logger.LogWarning($"Player with user ID {userId} not found in session {code}.");
             throw new HubException("Player not found.");
         }
-        EnsureCurrentPlayer(session, player);
 
         if (session.GetGameState().PendingDecisions.FirstOrDefault(d => d.PlayerId == player.Id) == null)
         {

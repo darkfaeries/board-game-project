@@ -114,22 +114,27 @@ public class CubeCoords
         return neighbors;
     }
 
+    private static int Mod3(int value) => ((value % 3) + 3) % 3;
+
     public List<CubeCoords> NodeGetNodeNeighbors()
     {
+        // На гексагональной решётке узлы бывают двух ориентаций: (q - r) mod 3 == 1 и == 2.
+        int targetParity = Mod3(q - r) == 1 ? 0 : 1;
         List<CubeCoords> neighbors = new List<CubeCoords>();
         for (int i = 0; i < neighborsMask.Count; ++i)
         {
-            if (i % 2 == 0) neighbors.Add(this + neighborsMask[i]);
+            if (i % 2 == targetParity) neighbors.Add(this + neighborsMask[i]);
         }
         return neighbors;
     }
 
     public List<CubeCoords> NodeGetHexNeighbors()
     {
+        int targetParity = Mod3(q - r) == 1 ? 1 : 0;
         List<CubeCoords> neighbors = new List<CubeCoords>();
         for (int i = 0; i < neighborsMask.Count; ++i)
         {
-            if (i % 2 == 1) neighbors.Add(this + neighborsMask[i]);
+            if (i % 2 == targetParity) neighbors.Add(this + neighborsMask[i]);
         }
         return neighbors;
     }

@@ -425,9 +425,9 @@ public sealed record ExplorerMovedEvent(Guid Id, List<AxialCoords> Route);
 public sealed record ExplorerConvertedToCampEvent(Guid Id, AxialCoords NodeCoords);
 public sealed record ProgressAdvancedEvent(Guid Id, ProgressType ProgressType);
 public sealed record WinnerCheckedEvent(Guid Id);
-public sealed record SevenRolledEvent(Guid Id, int DiceRoll, List<PendingDecisionEvent> PendingDecisions);
+public sealed record SevenRolledEvent(Guid PlayerId, int DiceRoll, List<PendingDecisionEvent> PendingDecisions);
 public sealed record PendingDecisionEvent(Guid PlayerId, string DecisionType, int RequiredCount);
-public sealed record DiscardResourcesSubmittedEvent(Guid Id);
+public sealed record DiscardResourcesSubmittedEvent(Guid PlayerId);
 public sealed record TradeDecisionSubmittedEvent(
     Guid SourcePlayerId,
     Guid TargetPlayerId,

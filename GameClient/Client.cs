@@ -7,6 +7,7 @@ using Myra.Graphics2D;
 using Myra.Graphics2D.TextureAtlases;
 using System;
 using System.Threading.Tasks;
+using System.Collections.Concurrent;
 using FontStashSharp;
 using System.IO;
 using System.Linq;
@@ -57,6 +58,14 @@ namespace GameClient
         private volatile PhaseState _phaseState = new(TurnPhase.Roll, false, null);
         private sealed record StatusState(GameStatus Status);
         private volatile StatusState _gameStatus = new(GameStatus.WaitingForPlayers);
+        private sealed record PendingDiscardsState(Dictionary<Guid, int> Counts);
+        private volatile PendingDiscardsState _pendingDiscards = new(new Dictionary<Guid, int>());
+        private sealed record WinnerState(Guid? PlayerId);
+        private volatile WinnerState _winner = new(null);
+        private sealed record PendingTradeState(PendingTradeSnapshot? Trade);
+        private volatile PendingTradeState _pendingTrade = new(null);
+        private volatile string? _pendingTradeNotice;
+        private readonly ConcurrentQueue<AxialCoords> _pendingTribeCollections = new();
 
         private Guid? _myPlayerId;
         private bool _gameStarted;
@@ -96,9 +105,12 @@ namespace GameClient
             // Любое игровое событие означает, что состояние на карте пора обновить.
             _networkClient.GameStarted += value =>
             {
+                _winner = new WinnerState(null);
                 _currentPlayer = new CurrentPlayerState(value.CurrentPlayerId);
                 _phaseState = new PhaseState(value.CurrentPhase, false, null);
                 _gameStatus = new StatusState(GameStatus.Setup);
+                _pendingDiscards = new PendingDiscardsState(new Dictionary<Guid, int>());
+                _pendingTrade = new PendingTradeState(null);
                 // SignalR callbacks run off the game thread. Let Update perform
                 // the UI transition for every client that receives the broadcast.
                 System.Threading.Interlocked.Exchange(ref _gameStartEventPending, 1);
@@ -110,6 +122,7 @@ namespace GameClient
                 _currentPlayer = new CurrentPlayerState(value.NextPlayerId);
                 _phaseState = new PhaseState(NextPhase(_phaseState.Phase), false, null);
                 _gameStatus = new StatusState(GameStatus.Playing);
+                _pendingTrade = new PendingTradeState(null);
                 _snapshotDirty = true;
             };
             _networkClient.InitialPlacementSubmitted += value =>
@@ -124,13 +137,52 @@ namespace GameClient
                 _phaseState = new PhaseState(_phaseState.Phase, true, value.DiceRoll);
                 _snapshotDirty = true;
             };
+            _networkClient.SevenRolled += value =>
+            {
+                var pending = value.PendingDecisions
+                    .Where(decision => decision.DecisionType == nameof(DiscardResourcesDecision) && decision.RequiredCount > 0)
+                    .GroupBy(decision => decision.PlayerId)
+                    .ToDictionary(group => group.Key, group => group.Max(decision => decision.RequiredCount));
+                _pendingDiscards = new PendingDiscardsState(pending);
+                _snapshotDirty = true;
+            };
             _networkClient.ExplorerCreated += _ => _snapshotDirty = true;
             _networkClient.ExplorerMoved += _ => _snapshotDirty = true;
-            _networkClient.ExplorerConvertedToCamp += _ => _snapshotDirty = true;
+            _networkClient.ExplorerConvertedToCamp += value =>
+            {
+                _pendingTribeCollections.Enqueue(value.NodeCoords);
+                _snapshotDirty = true;
+            };
             _networkClient.ProgressAdvanced += _ => _snapshotDirty = true;
-            _networkClient.PlayerTradePhaseCompleted += _ => _snapshotDirty = true;
+            _networkClient.PlayerTradeRequested += value =>
+            {
+                _pendingTrade = new PendingTradeState(new PendingTradeSnapshot(
+                    value.TradeId,
+                    value.Source,
+                    value.Target,
+                    new Dictionary<ResourceType, int>(value.Offer),
+                    new Dictionary<ResourceType, int>(value.Request)));
+                _snapshotDirty = true;
+            };
+            _networkClient.TradeDecisionSubmitted += value =>
+            {
+                _pendingTrade = new PendingTradeState(null);
+                _pendingTradeNotice = value.IsAccepted ? "Обмен принят!" : "Обмен отклонён.";
+                _snapshotDirty = true;
+            };
             _networkClient.BankTradeCompleted += _ => _snapshotDirty = true;
-            _networkClient.DiscardResourcesSubmitted += _ => _snapshotDirty = true;
+            _networkClient.DiscardResourcesSubmitted += value =>
+            {
+                var pending = new Dictionary<Guid, int>(_pendingDiscards.Counts);
+                pending.Remove(value.PlayerId);
+                _pendingDiscards = new PendingDiscardsState(pending);
+                _snapshotDirty = true;
+            };
+            _networkClient.WinnerChecked += value =>
+            {
+                _winner = new WinnerState(value.Id);
+                _snapshotDirty = true;
+            };
         }
 
         protected override void LoadContent()
@@ -145,17 +197,48 @@ namespace GameClient
             _mapScreen.RollRequested += () => _ = RollAsync();
             _mapScreen.EndTurnRequested += () => _ = EndTurnAsync();
             _mapScreen.InitialPlacementRequested += coords => _ = RunMapActionAsync(
-                () => _networkClient.SubmitInitialPlacementAsync(coords), "Не удалось поставить начальный кемп");
+                () => _networkClient.SubmitInitialPlacementAsync(coords), "Не удалось поставить начальный лагерь");
             _mapScreen.CreateExplorerRequested += coords => _ = RunMapActionAsync(
                 () => _networkClient.CreateExplorerAsync(coords), "Не удалось создать исследователя");
             _mapScreen.ConvertExplorerToCampRequested += coords => _ = RunMapActionAsync(
-                () => _networkClient.ConvertExplorerToCampAsync(coords), "Не удалось построить кемп");
+                () => _networkClient.ConvertExplorerToCampAsync(coords), "Не удалось построить лагерь", checkWinner: true);
             _mapScreen.MoveExplorerRequested += route => _ = RunMapActionAsync(
-                () => _networkClient.MoveExplorerAsync(route), "Не удалось переместить исследователя");
-            _mapScreen.TradeWithPlayerRequested += (targetId, offer) => _ = RunMapActionAsync(
-                () => _networkClient.TradeWithPlayerAsync(targetId, offer), "Не удалось передать ресурсы");
+                () => _networkClient.MoveExplorerAsync(route), "Не удалось переместить исследователя", checkWinner: true);
+            _mapScreen.ProgressRequested += progressType => _ = RunMapActionAsync(
+                () => _networkClient.AdvanceProgressAsync(progressType), "Не удалось повысить параметр", checkWinner: true);
+            _mapScreen.DiscardResourcesRequested += resources => _ = RunMapActionAsync(
+                () => _networkClient.DiscardResourcesDecisionAsync(resources),
+                "Не удалось сбросить ресурсы");
+            _mapScreen.TradeWithPlayerRequested += (targetId, offer, request) => _ = RunMapActionAsync(
+                () => _networkClient.TradeWithPlayerAsync(targetId, offer, request), "Не удалось предложить обмен");
+            _mapScreen.TradeDecisionRequested += (sourcePlayerId, tradeId, isAccepted) => _ = RunMapActionAsync(
+                () => _networkClient.SubmitTradeDecisionAsync(sourcePlayerId, tradeId, isAccepted), "Не удалось ответить на обмен");
             _mapScreen.TradeWithBankRequested += (offer, resource) => _ = RunMapActionAsync(
                 () => _networkClient.TradeWithBankAsync(offer, resource), "Не удалось обменять ресурсы");
+            _mapScreen.ReturnToMainMenuRequested += () =>
+            {
+                _appState = AppState.MainMenu;
+                _ = _networkClient.DisconnectAsync();
+                _isConnected = false;
+                _gameStarted = false;
+                _gameStartEventPending = 0;
+                _myPlayerId = null;
+                _pendingSnapshot = null;
+                _snapshotDirty = false;
+                _winner = new WinnerState(null);
+                _gameStatus = new StatusState(GameStatus.WaitingForPlayers);
+                _currentPlayer = new CurrentPlayerState(null);
+                _phaseState = new PhaseState(TurnPhase.Roll, false, null);
+                _pendingDiscards = new PendingDiscardsState(new Dictionary<Guid, int>());
+                _pendingTrade = new PendingTradeState(null);
+                _pendingTradeNotice = null;
+                while (_pendingTribeCollections.TryDequeue(out _)) { }
+                _mapScreen.Reset();
+                _createLabelMain.Text = _createLabelShadow.Text = "Create";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Connect";
+                _statusLabelMain.Text = _statusLabelShadow.Text = "Вы не подключены к игре. Создайте новую игру.";
+                _statusLabelMain.TextColor = Color.LightCoral;
+            };
         }
 
         private static TurnPhase NextPhase(TurnPhase phase) => phase switch
@@ -679,6 +762,12 @@ namespace GameClient
         // Применяет готовый снимок и, если состояние изменилось, запрашивает новый.
         private void PumpSnapshot()
         {
+            while (_pendingTribeCollections.TryDequeue(out var nodeCoords))
+                _mapScreen.MarkTribeCollected(nodeCoords);
+
+            if (System.Threading.Interlocked.Exchange(ref _pendingTradeNotice, null) is { } tradeNotice)
+                _mapScreen.ShowMessage(tradeNotice);
+
             if (_pendingSnapshot is { } snapshot)
             {
                 _pendingSnapshot = null;
@@ -709,6 +798,12 @@ namespace GameClient
                 snapshot.Phase = _phaseState.Phase;
                 snapshot.RollUsed = _phaseState.RollUsed;
                 snapshot.LastRoll = _phaseState.LastRoll;
+                snapshot.WinnerPlayerId = _winner.PlayerId;
+                snapshot.PendingTrade = _pendingTrade.Trade;
+                foreach (var player in snapshot.Players)
+                    player.DiscardResourcesRequired = _pendingDiscards.Counts.TryGetValue(player.Id, out int required)
+                        ? required
+                        : null;
 
                 _pendingSnapshot = snapshot;
             }
@@ -758,7 +853,8 @@ namespace GameClient
 
         private async Task RunMapActionAsync(
             Func<Task<(bool Ok, string? Error)>> action,
-            string fallbackError)
+            string fallbackError,
+            bool checkWinner = false)
         {
             if (_mapScreen.Busy) return;
 
@@ -768,6 +864,8 @@ namespace GameClient
                 var result = await action();
                 if (!result.Ok)
                     _mapScreen.ShowMessage(result.Error ?? fallbackError);
+                else if (checkWinner)
+                    _ = _networkClient.CheckWinnerAsync();
 
                 _snapshotDirty = true;
             }

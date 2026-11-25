@@ -16,6 +16,8 @@ public sealed class GameSnapshot
     public string? GameCode { get; set; }
     public Guid? YouPlayerId { get; set; }
     public Guid? CurrentPlayerId { get; set; }
+    public Guid? WinnerPlayerId { get; set; }
+    public PendingTradeSnapshot? PendingTrade { get; set; }
     public GameStatus Status { get; set; } = GameStatus.WaitingForPlayers;
 
     // Фазу и признак «кубик уже брошен» восстанавливает клиент по событиям хаба.
@@ -32,6 +34,13 @@ public sealed class GameSnapshot
     public bool IsMyTurn => YouPlayerId is not null && YouPlayerId == CurrentPlayerId;
 }
 
+public sealed record PendingTradeSnapshot(
+    Guid TradeId,
+    Guid SourcePlayerId,
+    Guid TargetPlayerId,
+    Dictionary<ResourceType, int> Offer,
+    Dictionary<ResourceType, int> Request);
+
 public sealed class PlayerSnapshot
 {
     public Guid Id { get; set; }
@@ -42,6 +51,8 @@ public sealed class PlayerSnapshot
     public List<CoordDto> Camps { get; } = new();
     public List<CoordDto> Explorers { get; } = new();
     public int TribesCollected { get; set; }
+    // Filled from the SevenRolled hub event; the REST players endpoint does not expose decisions.
+    public int? DiscardResourcesRequired { get; set; }
 
     public int Resource(ResourceType type) =>
         Resources.TryGetValue(type, out var amount) ? amount : 0;
