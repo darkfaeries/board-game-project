@@ -49,8 +49,6 @@ public class SessionController(IGameStore store) : ControllerBase
             player.Resources,
             player.Progress,
             player.TribesCollected,
-            VictoryPoints = session.GetVictoryPoints(player.Id),
-            state.TurnNumber,
             CampPositions = state.Board.CampPositions
                 .Where(position => position.Value == player.Id)
                 .Select(position => position.Key),
