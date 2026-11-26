@@ -1,59 +1,96 @@
-﻿using Microsoft.Xna.Framework;
+﻿using Microsoft.Extensions.Logging;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 
 using System;
-using System.IO;
 using System.Collections.Generic;
+
+using GameServer;
 
 namespace Sandbox;
 
 public class Game1 : Game
 {
-    private GraphicsDeviceManager _graphics;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger<Game1> _logger;
+    private readonly GraphicsDeviceManager _graphics;
     private BasicEffect _effect;
     private SpriteBatch _spriteBatch;
     private SpriteFont _numberFont;
+    private readonly MapType _selectedMapType;
+    private static readonly MapGenerationOptions HeightMapOptions = new(40, 24, 0.5f);
+    private static readonly MapGenerationOptions EarthMapOptions = new(56, 20, 1f / 255f);
+    private readonly int _mapSeed;
+    private readonly IHeightSource _earthHeights;
+
     private BoardState _board;
 
-    // Built once in world units (hex corner radius = 1); fitted to the window via the World matrix.
     private Mesh _boardMesh;
     private Vector2 _boardMin;
     private Vector2 _boardMax;
 
-    public Game1()
+    public Game1(ILoggerFactory loggerFactory, int seed, IHeightSource earthHeights, MapType mapType)
     {
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+        _loggerFactory = loggerFactory;
+        _logger = loggerFactory.CreateLogger<Game1>();
+        _mapSeed = seed;
+        _earthHeights = earthHeights ?? throw new ArgumentNullException(nameof(earthHeights));
         _graphics = new GraphicsDeviceManager(this);
         Content.RootDirectory = "Content";
         IsMouseVisible = true;
         Window.AllowUserResizing = true;
 
-        // Antialiasing: smooths the jagged edges of all triangles.
         _graphics.GraphicsProfile = GraphicsProfile.HiDef;
         _graphics.PreferMultiSampling = true;
         _graphics.PreparingDeviceSettings += (_, e) =>
             e.GraphicsDeviceInformation.PresentationParameters.MultiSampleCount = 8;
+        _selectedMapType = mapType;
     }
 
     protected override void Initialize()
     {
-        string maps_path = "../GameDomain/GameFiles/Maps/";
-        string current_map_dir = "Default_Map/";
-
-        string hexes_path = maps_path + current_map_dir + "hexes.csv";
-        string nodes_path = maps_path + current_map_dir + "nodes.csv";
-        string paths_path = maps_path + current_map_dir + "paths.csv";
-
-        using (var hexes_rd = new StreamReader(hexes_path))
-        using (var nodes_rd = new StreamReader(nodes_path))
-        using (var paths_rd = new StreamReader(paths_path))
+        switch (_selectedMapType)
         {
-            _board = new BoardState(hexes_rd, nodes_rd, paths_rd);
-        }
+            case MapType.Classic:
+            {
+                var csvGenerator = new CsvBoardGenerator(
+                    _loggerFactory.CreateLogger<CsvBoardGenerator>());
 
-        Console.WriteLine($"hexes loaded: {_board.Hexes.Count}");
-        Console.WriteLine($"nodes loaded: {_board.Nodes.Count}");
-        Console.WriteLine($"explo paths loaded: {_board.ExplorationPaths.Count}");
+                IBoardFactory factory = new BoardFactory(
+                    _loggerFactory.CreateLogger<BoardFactory>(),
+                    csvGenerator, _earthHeights, _loggerFactory);
+
+                _board = factory.GetBoardState(_selectedMapType);
+                break;
+            }
+            case MapType.BySeed:
+            {
+                var map = new SeedMapGenerator().Generate(
+                    HeightMapOptions, _mapSeed, _loggerFactory.CreateLogger<SeedMapGenerator>());
+                _board = new BoardBuilder().Build(map, _mapSeed, _loggerFactory);
+                _logger.LogInformation("Generated {HexCount} hexes with seed {Seed}.", map.Cells.Count, _mapSeed);
+                break;
+            }
+            case MapType.Earth:
+            {
+                // Keep latitudes from 90 degrees north to 60 degrees south.
+                IHeightSource croppedHeights = new CroppedHeightSource(
+                    _loggerFactory.CreateLogger<CroppedHeightSource>(),
+                    _earthHeights,
+                    (0f, 0f),
+                    (1f, 5f / 6f));
+                var map = new MapGenerator().Generate(
+                    EarthMapOptions, croppedHeights, _loggerFactory.CreateLogger<MapGenerator>());
+                _board = new BoardBuilder().Build(map, loggerFactory: _loggerFactory);
+                _logger.LogInformation("Generated {CellCount} cells from Earth heights.", map.Cells.Count);
+                break;
+            }
+            default:
+                _logger.LogError("Invalid map type: {MapType}.", _selectedMapType);
+                throw new ArgumentOutOfRangeException(nameof(_selectedMapType), _selectedMapType, "Invalid map type.");
+        }
 
         base.Initialize();
     }
@@ -82,6 +119,37 @@ public class Game1 : Game
     {
         var mb = new MeshBuilder();
         var pathsAdded = new HashSet<Path>();
+
+        if (_selectedMapType != MapType.Classic)
+        {
+            foreach (var hex in _board.Hexes.Values)
+            {
+                Vector2 center = HexLayout.ToWorld(hex.Coords);
+                mb.AddHexagon(center, 1f, TerrainColor(hex.Terrain));
+                mb.AddHexagonOutline(center, 1f, 0.035f, new Color(45, 55, 50));
+            }
+
+            if (_board.Hexes.Count == 0)
+                throw new InvalidOperationException("The generated map contains no land cells to display.");
+
+            foreach (var path in _board.LandPaths)
+                AddRegularPath(mb, path);
+
+            foreach (var path in _board.SeaPaths)
+            {
+                mb.AddLine(HexLayout.ToWorld(path.from), HexLayout.ToWorld(path.to), 0.12f, new Color(125, 227, 245));
+            }
+
+            foreach (var node in _board.Nodes.Values)
+            {
+                mb.AddHexagon(HexLayout.ToWorld(node.Coords), 0.08f, new Color(255, 229, 164));
+            }
+
+            _logger.LogInformation("Displaying {LandCount} land cells.", _board.Hexes.Count);
+            _boardMin = mb.Min;
+            _boardMax = mb.Max;
+            return mb.Build(GraphicsDevice);
+        }
 
         foreach (var hex in _board.Hexes.Values)
             AddHexTile(mb, hex);
@@ -170,7 +238,6 @@ public class Game1 : Game
 
         var viewport = GraphicsDevice.Viewport;
 
-        // Pixel coordinates: (0,0) is the top-left corner, Y grows downwards.
         _effect.Projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
         Matrix world = FitToScreen(viewport.Width, viewport.Height, margin: 20f);
         _effect.World = world;
@@ -178,10 +245,12 @@ public class Game1 : Game
         GraphicsDevice.RasterizerState = RasterizerState.CullNone;
         _boardMesh.Draw(GraphicsDevice, _effect);
 
-        // Same world matrix as the mesh, so text positions and sizes are in world units too.
         _spriteBatch.Begin(transformMatrix: world, samplerState: SamplerState.LinearClamp);
-        foreach (var hex in _board.Hexes.Values)
-            DrawNumberToken(hex);
+        if (_board != null)
+        {
+            foreach (var hex in _board.Hexes.Values)
+                DrawNumberToken(hex);
+        }
         _spriteBatch.End();
 
         base.Draw(gameTime);
@@ -201,11 +270,12 @@ public class Game1 : Game
         _spriteBatch.DrawString(_numberFont, text, HexLayout.ToWorld(hex.Coords), color, 0f, origin, scale, SpriteEffects.None, 0f);
     }
 
-    // World units -> pixels: scale so the board fits, then center it.
     private Matrix FitToScreen(int width, int height, float margin)
     {
         Vector2 size = _boardMax - _boardMin;
-        float scale = MathF.Min((width - 2 * margin) / size.X, (height - 2 * margin) / size.Y);
+        float scale = MathF.Min(
+            MathF.Max(1f, width - 2 * margin) / size.X,
+            MathF.Max(1f, height - 2 * margin) / size.Y);
         Vector2 offset = new Vector2(width, height) / 2f - (_boardMin + size / 2f) * scale;
 
         return Matrix.CreateScale(scale, scale, 1f) * Matrix.CreateTranslation(offset.X, offset.Y, 0f);
