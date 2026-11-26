@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 
 public class AxialCoords
@@ -13,7 +14,7 @@ public class AxialCoords
         return HashCode.Combine(q, r);
     }
 
-    public override bool Equals(object obj)
+    public override bool Equals(object? obj)
     {
         return obj is AxialCoords other && q == other.q && r == other.r;
     }
@@ -28,10 +29,11 @@ public class AxialCoords
         return (q - r) % 3 == 0;
     }
 
-    public AxialCoords(int in_q, int in_r)
+    [JsonConstructor]
+    public AxialCoords(int q, int r)
     {
-        q = in_q;
-        r = in_r;
+        this.q = q;
+        this.r = r;
     }
 
     public AxialCoords(CubeCoords cubeCoords)
@@ -112,22 +114,27 @@ public class CubeCoords
         return neighbors;
     }
 
+    private static int Mod3(int value) => ((value % 3) + 3) % 3;
+
     public List<CubeCoords> NodeGetNodeNeighbors()
     {
+        // На гексагональной решётке узлы бывают двух ориентаций: (q - r) mod 3 == 1 и == 2.
+        int targetParity = Mod3(q - r) == 1 ? 0 : 1;
         List<CubeCoords> neighbors = new List<CubeCoords>();
         for (int i = 0; i < neighborsMask.Count; ++i)
         {
-            if (i % 2 == 0) neighbors.Add(this + neighborsMask[i]);
+            if (i % 2 == targetParity) neighbors.Add(this + neighborsMask[i]);
         }
         return neighbors;
     }
 
     public List<CubeCoords> NodeGetHexNeighbors()
     {
+        int targetParity = Mod3(q - r) == 1 ? 1 : 0;
         List<CubeCoords> neighbors = new List<CubeCoords>();
         for (int i = 0; i < neighborsMask.Count; ++i)
         {
-            if (i % 2 == 1) neighbors.Add(this + neighborsMask[i]);
+            if (i % 2 == targetParity) neighbors.Add(this + neighborsMask[i]);
         }
         return neighbors;
     }

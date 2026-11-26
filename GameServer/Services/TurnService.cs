@@ -30,6 +30,12 @@ public class TurnService : ITurnService
             return new TurnResult(false, $"It's not player {player.Name}'s turn.");
         }
 
+        if (session.GetGameState().PendingDecisions.Any())
+        {
+            _logger.LogWarning($"Player {player.Name} attempted to end turn with pending decisions in session {session.Code}.");
+            return new TurnResult(false, $"You have pending decisions to resolve before ending your turn.");
+        }
+
         if (session.NextPhase() == TurnPhase.Roll)
         {
             session.GetGameState().Phase = TurnPhase.Roll;

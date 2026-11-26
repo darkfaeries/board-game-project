@@ -14,7 +14,7 @@ public class Path
         return from.GetHashCode() ^ to.GetHashCode();
     }
 
-    public override bool Equals(object obj)
+    public override bool Equals(object? obj)
     {
         return obj is Path other && ((from.Equals(other.from) && to.Equals(other.to)) || (from.Equals(other.to) && to.Equals(other.from))); 
     }
