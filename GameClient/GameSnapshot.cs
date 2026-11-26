@@ -23,6 +23,7 @@ public sealed class GameSnapshot
     // Фазу и признак «кубик уже брошен» восстанавливает клиент по событиям хаба.
     public TurnPhase Phase { get; set; } = TurnPhase.Roll;
     public bool RollUsed { get; set; }
+    public int? TurnNumber { get; set; }
     public int? LastRoll { get; set; }
 
     public PlayerSnapshot? CurrentPlayer =>
@@ -50,6 +51,7 @@ public sealed class PlayerSnapshot
     public Dictionary<ProgressType, int> Progress { get; } = new();
     public List<CoordDto> Camps { get; } = new();
     public List<CoordDto> Explorers { get; } = new();
+    public int? VictoryPoints { get; set; }
     public int TribesCollected { get; set; }
     // Filled from the SevenRolled hub event; the REST players endpoint does not expose decisions.
     public int? DiscardResourcesRequired { get; set; }
@@ -86,7 +88,11 @@ public static class GameSnapshotParser
         foreach (var element in document.RootElement.EnumerateArray())
         {
             if (element.ValueKind == JsonValueKind.Object)
+            {
                 snapshot.Players.Add(ParsePlayer(element));
+                if (TryGetProperty(element, "turnNumber", out var turn) && turn.TryGetInt32(out int number))
+                    snapshot.TurnNumber = number;
+            }
         }
 
         return snapshot;
@@ -100,6 +106,9 @@ public static class GameSnapshotParser
             Name = ReadString(element, "name") ?? string.Empty,
             Color = ReadEnum(element, "color", PlayerColor.Red),
         };
+
+        if (TryGetProperty(element, "victoryPoints", out var points) && points.TryGetInt32(out int score))
+            player.VictoryPoints = score;
 
         if (TryGetProperty(element, "resources", out var resources))
         {

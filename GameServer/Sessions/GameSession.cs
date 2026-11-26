@@ -152,11 +152,13 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
 
     public Player[] GetPlayers() => gameState.Players.ToArray();
     public GameState GetGameState() => gameState;
-    public bool CalculateVictoryPoints(Guid playerId)
+    public bool CalculateVictoryPoints(Guid playerId) => GetVictoryPoints(playerId) >= GameConstants.VictoryPointsToWin;
+
+    public int GetVictoryPoints(Guid playerId)
     {
         int victoryPoints = 0;
         var player = gameState.GetPlayer(playerId);
-        if (player == null) return false;
+        if (player == null) return 0;
         victoryPoints += player.TribesCollected.Count;
         foreach (ProgressType progressType in Enum.GetValues<ProgressType>())
         {
@@ -183,6 +185,6 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
             victoryPoints += 2;
         }
         
-        return victoryPoints >= GameConstants.VictoryPointsToWin;
+        return victoryPoints;
     }
 }

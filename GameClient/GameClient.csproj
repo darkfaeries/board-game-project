@@ -21,12 +21,13 @@
 
   <ItemGroup>
     <Content Include="..\GameDomain\GameFiles\Maps\Default_Map\*.csv">
-      <Link>GameDomain\GameFiles\Maps\Default_Map\%(Filename)%(Extension)</Link>
+      <Link>GameFiles\Maps\Default_Map\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="assets\painted\*"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
     <None Update="assets\arial.ttf">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

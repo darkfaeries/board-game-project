@@ -215,6 +215,7 @@ namespace GameClient
                 () => _networkClient.SubmitTradeDecisionAsync(sourcePlayerId, tradeId, isAccepted), "Не удалось ответить на обмен");
             _mapScreen.TradeWithBankRequested += (offer, resource) => _ = RunMapActionAsync(
                 () => _networkClient.TradeWithBankAsync(offer, resource), "Не удалось обменять ресурсы");
+            _mapScreen.MenuRequested += () => _appState = AppState.MainMenu;
             _mapScreen.ReturnToMainMenuRequested += () =>
             {
                 _appState = AppState.MainMenu;
@@ -630,17 +631,19 @@ namespace GameClient
         {
             if (_isConnected)
             {
-                if (!_gameStarted)
+                if (_gameStarted)
                 {
-                    _createButton.Enabled = false;
-                    var start = await _networkClient.StartGameAsync();
-                    _createButton.Enabled = true;
+                    _appState = AppState.InGame;
+                    return;
+                }
+                _createButton.Enabled = false;
+                var start = await _networkClient.StartGameAsync();
+                _createButton.Enabled = true;
 
-                    if (!start.Ok)
-                    {
-                        _statusLabelMain.Text = _statusLabelShadow.Text = start.Error ?? "Не удалось начать игру";
-                        _statusLabelMain.TextColor = Color.LightCoral;
-                    }
+                if (!start.Ok)
+                {
+                    _statusLabelMain.Text = _statusLabelShadow.Text = start.Error ?? "Не удалось начать игру";
+                    _statusLabelMain.TextColor = Color.LightCoral;
                 }
                 return;
             }
@@ -729,6 +732,8 @@ namespace GameClient
         {
             await _networkClient.DisconnectAsync();
             _isConnected = false;
+            _gameStarted = false;
+            _mapScreen.Reset();
             _pendingSnapshot = null;
             _snapshotDirty = false;
             _statusLabelMain.Text = _statusLabelShadow.Text = "Вы не подключены к игре. Создайте новую игру.";
@@ -742,6 +747,7 @@ namespace GameClient
             if (System.Threading.Interlocked.Exchange(ref _gameStartEventPending, 0) == 1)
             {
                 _gameStarted = true;
+                _createLabelMain.Text = _createLabelShadow.Text = "Продолжить";
                 _appState = AppState.InGame;
             }
 

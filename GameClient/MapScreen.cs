@@ -9,9 +9,8 @@ using System.Linq;
 
 namespace GameClient;
 
-public class MapScreen
+public partial class MapScreen
 {
-    private const float TerrainTextureZoom = 1.5f;
 
     private enum BoardActionMode { None, CreateExplorer, MoveExplorer, ConvertToCamp }
     private enum TradeMode { Player, Bank }
@@ -22,7 +21,6 @@ public class MapScreen
     private BasicEffect _effect = null!;
     private BasicEffect _textureEffect = null!;
     private SpriteBatch _spriteBatch = null!;
-    private Texture2D? _backgroundTexture;
     private FontSystem _numberFontSystem = null!;
     private SpriteFontBase _numberFont = null!;
     private BoardState _board = null!;
@@ -53,6 +51,7 @@ public class MapScreen
     public event Action<Guid, Dictionary<ResourceType, int>, Dictionary<ResourceType, int>>? TradeWithPlayerRequested;
     public event Action<Guid, Guid, bool>? TradeDecisionRequested;
     public event Action<Dictionary<ResourceType, int>, ResourceType>? TradeWithBankRequested;
+    public event Action? MenuRequested;
     public event Action? ReturnToMainMenuRequested;
     public bool Busy { get; set; }
 
@@ -76,6 +75,7 @@ public class MapScreen
 
     public void Reset()
     {
+        _exploreOpen = _tradeOpen = false;
         _snapshot = null;
         _message = null;
         _messageSeconds = 0f;
@@ -111,7 +111,6 @@ public class MapScreen
     {
         string mapDirectory = System.IO.Path.Combine(
             AppContext.BaseDirectory,
-            "GameDomain",
             "GameFiles",
             "Maps",
             "Default_Map");
@@ -145,20 +144,12 @@ public class MapScreen
         };
 
         _spriteBatch = new SpriteBatch(_graphicsDevice);
-        string backgroundPath = System.IO.Path.Combine(
-            AppContext.BaseDirectory,
-            "assets",
-            "tiles",
-            "map_background.jpg");  
-        if (File.Exists(backgroundPath))
-            _backgroundTexture = Texture2D.FromFile(_graphicsDevice, backgroundPath);
-
-        string fontPath = System.IO.Path.Combine(AppContext.BaseDirectory, "assets", "Marmelad-Regular.ttf");
+        LoadPaintedArt();
         _numberFontSystem = new FontSystem();
-        _numberFontSystem.AddFont(File.ReadAllBytes(fontPath));
+        _numberFontSystem.AddFont(File.ReadAllBytes(System.IO.Path.Combine(ArtDirectory, "Alegreya-Bold.ttf")));
         _numberFont = _numberFontSystem.GetFont(64);
         _uiTitleFont = _numberFontSystem.GetFont(30);
-        _uiFont = _numberFontSystem.GetFont(21);
+        _uiFont = _numberFontSystem.GetFont(24);
 
         _pixel = new Texture2D(_graphicsDevice, 1, 1);
         _pixel.SetData(new[] { Color.White });
@@ -179,7 +170,7 @@ public class MapScreen
             mesh.Dispose();
         foreach (var texture in _terrainTextures.Values)
             texture.Dispose();
-        _backgroundTexture?.Dispose();
+        foreach (var texture in _art.Values) texture.Dispose();
         _effect?.Dispose();
         _textureEffect?.Dispose();
         _spriteBatch?.Dispose();
@@ -207,15 +198,7 @@ public class MapScreen
             if (tileBuilders.TryGetValue(hex.Terrain, out var tileBuilder))
             {
                 Texture2D texture = _terrainTextures[hex.Terrain];
-                var random = new Random(HashCode.Combine(hex.Coords.q, hex.Coords.r, (int)hex.Terrain));
-                var cropPosition = new Vector2(random.NextSingle(), random.NextSingle());
-                tileBuilder.AddHexagon(
-                    center,
-                    1f,
-                    TerrainTextureZoom,
-                    texture.Width,
-                    texture.Height,
-                    cropPosition);
+                tileBuilder.AddHexagon(center, 1f, 1f, texture.Width, texture.Height, new Vector2(0.5f));
             }
             else
                 mb.AddHexagon(center, 1f, TerrainColor(hex.Terrain));
@@ -258,11 +241,11 @@ public class MapScreen
 
     private void LoadTerrainTextures()
     {
-        string tilesDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "assets", "tiles");
+
 
         foreach (TerrainType terrain in Enum.GetValues<TerrainType>())
         {
-            string texturePath = System.IO.Path.Combine(tilesDirectory, $"{terrain}.jpg");
+            string texturePath = System.IO.Path.Combine(ArtDirectory, $"{terrain.ToString().ToLowerInvariant()}.png");
             if (File.Exists(texturePath))
                 _terrainTextures[terrain] = LoadTextureWithMipmaps(texturePath);
         }
@@ -318,12 +301,12 @@ public class MapScreen
 
     private static void AddExplorationPath(MeshBuilder mb, Path path)
     {
-        mb.AddLine(HexLayout.ToWorld(path.from), HexLayout.ToWorld(path.to), 0.12f, new Color(220, 100, 100));
+        mb.AddLine(HexLayout.ToWorld(path.from), HexLayout.ToWorld(path.to), 0.055f, new Color(217, 180, 119));
     }
 
     private static void AddRegularPath(MeshBuilder mb, Path path)
     {
-        mb.AddLine(HexLayout.ToWorld(path.from), HexLayout.ToWorld(path.to), 0.12f, new Color(220, 170, 100));
+        mb.AddLine(HexLayout.ToWorld(path.from), HexLayout.ToWorld(path.to), 0.025f, new Color(213, 173, 112));
     }
 
     private static void AddNode(MeshBuilder mb, Node node)
@@ -345,7 +328,7 @@ public class MapScreen
         }
         else
         {
-            mb.AddCircle(p, 0.12f, new Color(240, 180, 90));
+            mb.AddCircle(p, 0.045f, new Color(240, 180, 90));
         }
     }
 
@@ -362,55 +345,40 @@ public class MapScreen
         bool releasedThisFrame = _previousMouse.LeftButton == ButtonState.Pressed &&
                                  mouse.LeftButton == ButtonState.Released;
 
+        if (releasedThisFrame) HandleClick(ToHud(mouse.Position));
+        _previousMouse = mouse;
+    }
+
+    private void HandleClick(Point point)
+    {
         if (IsGameOver)
         {
-            if (releasedThisFrame && VictoryMainMenuButtonBounds.Contains(mouse.Position))
-            {
-                ReturnToMainMenuRequested?.Invoke();
-            }
-            _previousMouse = mouse;
+            if (VictoryMainMenuButtonBounds.Contains(point)) ReturnToMainMenuRequested?.Invoke();
             return;
         }
-
-        if (releasedThisFrame)
+        if (MenuButton.Contains(point)) { MenuRequested?.Invoke(); return; }
+        if (_snapshot is null || Busy) return;
+        if (HasIncomingTradeForMe) { HandleIncomingTradeClick(point); return; }
+        if (HasPendingDiscards)
         {
-            if (HasIncomingTradeForMe && HandleIncomingTradeClick(mouse.Position))
-            {
-                // Incoming trade decision handled.
-            }
-            else if (HasPendingDiscards && DiscardPanelBounds.Contains(mouse.Position))
-            {
-                if (HasPendingDiscard) HandleDiscardClick(mouse.Position);
-            }
-            else if (CanPlaceInitialCamp && HandleInitialPlacementClick(mouse.Position))
-            {
-                // Initial placement submitted.
-            }
-            else if (_snapshot?.Status == GameStatus.Setup)
-            {
-                // During setup, other controls and board actions are disabled.
-            }
-            else if (RollButton.Contains(mouse.Position) && CanRoll)
-                RollRequested?.Invoke();
-            else if (EndTurnButton.Contains(mouse.Position) && CanEndTurn)
-                EndTurnRequested?.Invoke();
-            else if (CanBuild && HandleBoardActionButtonClick(mouse.Position))
-            {
-                // Mode selection handled.
-            }
-            else if (CanTrade && HandleTradeClick(mouse.Position))
-            {
-                // Trade controls handled.
-            }
-            else if (CanBuild && HandleProgressClick(mouse.Position))
-            {
-                // Progress controls handled.
-            }
-            else if (CanBuild && _boardActionMode != BoardActionMode.None)
-                HandleBoardNodeClick(mouse.Position);
+            if (HasPendingDiscard && DiscardPanelBounds.Contains(point)) HandleDiscardClick(point);
+            return;
         }
-
-        _previousMouse = mouse;
+        if (EndTurnButton.Contains(point))
+        {
+            if (CanRoll) RollRequested?.Invoke();
+            else if (CanEndTurn) EndTurnRequested?.Invoke();
+            return;
+        }
+        if (TradeButton.Contains(point) && CanTrade) { _tradeOpen = !_tradeOpen; return; }
+        if (_tradeOpen && CanTrade && HandleTradeClick(point)) return;
+        if (CanBuild)
+        {
+            if (HandleBoardActionButtonClick(point) || HandleProgressClick(point)) return;
+        }
+        if (!MapArea.Contains(point)) return;
+        if (CanPlaceInitialCamp) HandleInitialPlacementClick(point);
+        else if (CanBuild && _boardActionMode != BoardActionMode.None) HandleBoardNodeClick(point);
     }
 
     private bool CanRoll =>
@@ -439,49 +407,12 @@ public class MapScreen
     private bool CanSubmitDiscard => !IsGameOver && HasPendingDiscard && !Busy &&
         _snapshot?.You?.DiscardResourcesRequired == _discardSelection.Values.Sum();
 
-    private Rectangle HeaderPanelBounds => new(16, 16, 450, 160);
-
-    private Rectangle PlayersPanelBounds(int playerCount)
-    {
-        const int cardW = 280;
-        const int cardH = 72;
-        const int gapX = 10;
-        const int gapY = 8;
-        int maxCols = _graphicsDevice.Viewport.Width >= 1380 ? 3 : 2;
-        int cols = Math.Min(maxCols, Math.Max(1, playerCount));
-        int rows = Math.Max(1, (playerCount + cols - 1) / cols);
-        int width = 16 + cols * cardW + (cols - 1) * gapX;
-        int height = 16 + rows * cardH + (rows - 1) * gapY;
-        return new Rectangle(_graphicsDevice.Viewport.Width - width - 16, 16, width, height);
-    }
-
-    private Rectangle RollButton =>
-        new(16, _graphicsDevice.Viewport.Height - 48 - 16, 200, 48);
-
-    private Rectangle EndTurnButton
-    {
-        get
-        {
-            var roll = RollButton;
-            return new Rectangle(roll.Right + 12, roll.Y, 220, 48);
-        }
-    }
-
-    private Rectangle BoardActionButtonsBounds => new(16, RollButton.Y - 44 - 10, 510, 44);
-
-    private Rectangle DiscardPanelBounds
-    {
-        get
-        {
-            int height = 90 + Enum.GetValues<ResourceType>().Length * 38;
-            return new Rectangle(16, RollButton.Y - height - 12, 560, height);
-        }
-    }
+    private static readonly Rectangle DiscardPanelBounds = new(440, 325, 640, 262);
 
     private Rectangle DiscardRowBounds(int index)
     {
         var panel = DiscardPanelBounds;
-        return new Rectangle(panel.X + 12, panel.Y + 48 + index * 38, panel.Width - 24, 32);
+        return new Rectangle(panel.X + 12, panel.Y + 64 + index * 38, panel.Width - 24, 32);
     }
 
     private bool HandleDiscardClick(Point point)
@@ -539,34 +470,13 @@ public class MapScreen
                 ? Math.Max(0, (_snapshot?.Players.Count ?? 0) - 1)
                 : 0;
             int headerHeight = _tradeMode == TradeMode.Player ? 196 : 178;
-            int top = PlayersPanelBounds(_snapshot?.Players.Count ?? 0).Bottom + 12;
-            return new Rectangle(_graphicsDevice.Viewport.Width - width - 16, top, width, headerHeight + playerCount * 38 + Enum.GetValues<ResourceType>().Length * 42);
+            return new Rectangle(1460 - width, 340, width, headerHeight + playerCount * 38 + Enum.GetValues<ResourceType>().Length * 42);
         }
     }
 
-    private Rectangle IncomingTradePanelBounds
-    {
-        get
-        {
-            var viewport = _graphicsDevice.Viewport;
-            const int width = 420;
-            const int height = 220;
-            return new Rectangle(
-                (viewport.Width - width) / 2,
-                110,
-                width,
-                height);
-        }
-    }
+    private static readonly Rectangle IncomingTradePanelBounds = new(500, 345, 550, 232);
 
-    private Rectangle ProgressPanelBounds =>
-        new(_graphicsDevice.Viewport.Width - 430 - 16, PlayersPanelBounds(_snapshot?.Players.Count ?? 0).Bottom + 12, 430, 56 + Enum.GetValues<ProgressType>().Length * 44);
-
-    private Rectangle ProgressButtonBounds(int index)
-    {
-        var panel = ProgressPanelBounds;
-        return new Rectangle(panel.X + 12, panel.Y + 42 + index * 44, 158, 34);
-    }
+    private static Rectangle ProgressButtonBounds(int index) => new(1510, 414 + index * 44, 344, 44);
 
     private bool HandleProgressClick(Point point)
     {
@@ -595,7 +505,7 @@ public class MapScreen
             return true;
         }
 
-        return ProgressPanelBounds.Contains(point);
+        return false;
     }
 
     private static readonly ProgressType[] ProgressTypes =
@@ -617,7 +527,7 @@ public class MapScreen
 
     private static string ProgressName(ProgressType progressType) => progressType switch
     {
-        ProgressType.Food => "Еда",
+        ProgressType.Food => "Пища",
         ProgressType.Hunting => "Охота",
         ProgressType.Shelter => "Жилище",
         ProgressType.Clothing => "Одежда",
@@ -631,46 +541,42 @@ public class MapScreen
         return string.Join(", ", cost.Select(item => $"{ResourceName(item.Key)} {item.Value}"));
     }
 
+    private bool CanConfirmMove => _boardActionMode == BoardActionMode.MoveExplorer && _selectedRoute.Count > 1;
+
     private bool HandleBoardActionButtonClick(Point point)
     {
-        var bounds = BoardActionButtonsBounds;
-        var actions = new[]
+        if (ExploreButton.Contains(point))
         {
-            BoardActionMode.CreateExplorer,
-            BoardActionMode.MoveExplorer,
-            BoardActionMode.ConvertToCamp,
-        };
-
-        for (int i = 0; i < actions.Length; i++)
-        {
-            var button = new Rectangle(bounds.X + i * 170, bounds.Y, 160, bounds.Height);
-            if (!button.Contains(point)) continue;
-
-            if (actions[i] == BoardActionMode.MoveExplorer &&
-                _boardActionMode == BoardActionMode.MoveExplorer && _selectedRoute.Count > 1)
+            if (CanConfirmMove)
             {
                 MoveExplorerRequested?.Invoke(new List<AxialCoords>(_selectedRoute));
-                _selectedRoute.Clear();
-                _selectedExplorer = null;
-                _boardActionMode = BoardActionMode.None;
-                return true;
+                SelectBoardAction(BoardActionMode.None);
             }
-
-            _boardActionMode = _boardActionMode == actions[i] ? BoardActionMode.None : actions[i];
-            _selectedExplorer = null;
-            _selectedRoute.Clear();
-            _message = _boardActionMode switch
-            {
-                BoardActionMode.CreateExplorer => "Нажмите на свободный узел рядом с вашим лагерем.",
-                BoardActionMode.MoveExplorer => "Выберите своего исследователя, затем соседний узел.",
-                BoardActionMode.ConvertToCamp => "Нажмите на своего исследователя у племени.",
-                _ => null,
-            };
-            _messageSeconds = 8f;
+            else _exploreOpen = !_exploreOpen;
             return true;
         }
 
-        return false;
+        if (CampButton.Contains(point)) SelectBoardAction(BoardActionMode.ConvertToCamp);
+        else if (_exploreOpen && ExplorerOption(0).Contains(point)) SelectBoardAction(BoardActionMode.CreateExplorer);
+        else if (_exploreOpen && ExplorerOption(1).Contains(point)) SelectBoardAction(BoardActionMode.MoveExplorer);
+        else return false;
+        return true;
+    }
+
+    private void SelectBoardAction(BoardActionMode mode)
+    {
+        _exploreOpen = false;
+        _boardActionMode = _boardActionMode == mode ? BoardActionMode.None : mode;
+        _selectedExplorer = null;
+        _selectedRoute.Clear();
+        _message = _boardActionMode switch
+        {
+            BoardActionMode.CreateExplorer => "Нажмите на свободный узел рядом с вашим лагерем.",
+            BoardActionMode.MoveExplorer => "Выберите своего исследователя, затем соседний узел.",
+            BoardActionMode.ConvertToCamp => "Нажмите на своего исследователя у племени.",
+            _ => null,
+        };
+        _messageSeconds = 8f;
     }
 
     private void HandleBoardNodeClick(Point screenPoint)
@@ -761,10 +667,7 @@ public class MapScreen
 
     private Node? GetNodeAtScreenPoint(Point screenPoint)
     {
-        Matrix inverse = Matrix.Invert(FitToScreen(
-            _graphicsDevice.Viewport.Width,
-            _graphicsDevice.Viewport.Height,
-            margin: 20f));
+        Matrix inverse = Matrix.Invert(BoardToHud);
         Vector2 worldPoint = Vector2.Transform(new Vector2(screenPoint.X, screenPoint.Y), inverse);
 
         Node? closestNode = null;
@@ -787,7 +690,7 @@ public class MapScreen
         {
             if (!CanPlaceInitialCamp) return;
 
-            var hovered = GetNodeAtScreenPoint(Mouse.GetState().Position);
+            var hovered = GetNodeAtScreenPoint(HudMouse);
             foreach (var startNode in _board.Nodes.Values.Where(candidate => candidate.IsStartSpace && !IsOccupied(candidate.Coords)))
             {
                 var position = HexLayout.ToWorld(startNode.Coords);
@@ -807,7 +710,7 @@ public class MapScreen
         if (!CanBuild || _boardActionMode == BoardActionMode.None || _snapshot?.You is not { } me)
             return;
 
-        var node = GetNodeAtScreenPoint(Mouse.GetState().Position);
+        var node = GetNodeAtScreenPoint(HudMouse);
         if (node is not null && CanApplyActionAtNode(node, me, out _))
             DrawDisc(HexLayout.ToWorld(node.Coords), 0.92f, new Color(135, 245, 120) * 0.45f);
     }
@@ -1101,34 +1004,14 @@ public class MapScreen
 
     public void Draw(GameTime gameTime)
     {
-        _graphicsDevice.Clear(new Color(30, 110, 190));
-
+        _graphicsDevice.Clear(new Color(32, 27, 25));
         var viewport = _graphicsDevice.Viewport;
-
-        if (_backgroundTexture is not null)
-        {
-            float backgroundScale = MathF.Max(
-                viewport.Width / (float)_backgroundTexture.Width,
-                viewport.Height / (float)_backgroundTexture.Height);
-            Vector2 backgroundSize = new Vector2(_backgroundTexture.Width, _backgroundTexture.Height) * backgroundScale;
-            Vector2 backgroundPosition = (new Vector2(viewport.Width, viewport.Height) - backgroundSize) / 2f;
-
-            _spriteBatch.Begin(samplerState: SamplerState.LinearClamp);
-            _spriteBatch.Draw(
-                _backgroundTexture,
-                backgroundPosition,
-                sourceRectangle: null,
-                color: new Color(185, 185, 185),
-                rotation: 0f,
-                origin: Vector2.Zero,
-                scale: new Vector2(backgroundScale),
-                effects: SpriteEffects.None,
-                layerDepth: 0f);
-            _spriteBatch.End();
-        }
+        _spriteBatch.Begin(transformMatrix: HudToScreen, samplerState: SamplerState.LinearClamp);
+        Art("backdrop", DesignArea);
+        _spriteBatch.End();
 
         _effect.Projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
-        Matrix world = FitToScreen(viewport.Width, viewport.Height, margin: 20f);
+        Matrix world = BoardToHud * HudToScreen;
         _effect.World = world;
         _textureEffect.Projection = _effect.Projection;
         _textureEffect.World = world;
@@ -1176,6 +1059,14 @@ public class MapScreen
             _tribeCounterPlayerCount = null;
         }
 
+        if (_snapshot?.Phase != snapshot.Phase || _snapshot?.CurrentPlayerId != snapshot.CurrentPlayerId || _snapshot?.Status != snapshot.Status)
+        {
+            _exploreOpen = _tradeOpen = false;
+            if (_boardActionMode != BoardActionMode.None) _message = null;
+            _boardActionMode = BoardActionMode.None;
+            _selectedRoute.Clear();
+            _selectedExplorer = null;
+        }
         _snapshot = snapshot;
         if (snapshot.Status is GameStatus.Setup or GameStatus.Playing &&
             _tribeCounterPlayerCount != snapshot.Players.Count)
@@ -1335,111 +1226,18 @@ public class MapScreen
             layerDepth: 0f);
     }
 
-    private void DrawHud()
-    {
-        if (_snapshot is null) return;
-
-        _spriteBatch.Begin(samplerState: SamplerState.LinearClamp);
-
-        var headerPanel = HeaderPanelBounds;
-        DrawPanel(headerPanel);
-
-        string header = _snapshot.CurrentPlayer is { } currentPlayer
-            ? $"Ходит: {currentPlayer.Name}{(_snapshot.IsMyTurn ? " (вы)" : string.Empty)}"
-            : "Ход неизвестен";
-        _spriteBatch.DrawString(
-            _uiTitleFont,
-            header,
-            new Vector2(headerPanel.X + 16, headerPanel.Y + 8),
-            new Color(242, 228, 202));
-
-        string phaseLine = $"Фаза: {PhaseName(_snapshot.Phase)}";
-        if (_snapshot.LastRoll is int roll)
-            phaseLine += $" · выпало {roll}";
-        else if (_snapshot.RollUsed)
-            phaseLine += " · кубик брошен";
-        _spriteBatch.DrawString(
-            _uiFont,
-            phaseLine,
-            new Vector2(headerPanel.X + 16, headerPanel.Y + 48),
-            new Color(206, 194, 172));
-
-        string whoLine = _snapshot.You is { } you
-            ? $"Вы: {you.Name}"
-            : "Вы: не в сессии";
-        if (_snapshot.GameCode is { Length: > 0 } code)
-            whoLine += $" · код {code}";
-        _spriteBatch.DrawString(
-            _uiFont,
-            whoLine,
-            new Vector2(headerPanel.X + 16, headerPanel.Y + 74),
-            new Color(176, 166, 148));
-
-        DrawOwnResources(headerPanel);
-
-        DrawPlayersPanel();
-        if (_snapshot.Status == GameStatus.Setup)
-            DrawSetupInstructions();
-        else
-        {
-            DrawActionButtons();
-            if (HasPendingDiscards)
-            {
-                if (HasPendingDiscard) DrawDiscardPanel();
-                else DrawPendingWaitPanel();
-            }
-            if (CanBuild) DrawBoardActionButtons();
-            if (CanBuild) DrawProgressPanel();
-            if (CanTrade) DrawTradePanel();
-            if (HasIncomingTradeForMe) DrawIncomingTradePanel();
-        }
-        DrawMessage();
-        if (IsGameOver)
-            DrawVictoryOverlay();
-
-        _spriteBatch.End();
-    }
-
-    private Rectangle VictoryMainMenuButtonBounds
-    {
-        get
-        {
-            var viewport = _graphicsDevice.Viewport;
-            int width = Math.Min(560, Math.Max(280, viewport.Width - 32));
-            const int height = 240;
-            var panel = new Rectangle(
-                (viewport.Width - width) / 2,
-                (viewport.Height - height) / 2,
-                width,
-                height);
-            return new Rectangle(panel.X + 24, panel.Bottom - 48, panel.Width - 48, 36);
-        }
-    }
+    private static readonly Rectangle VictoryPanel = new(660, 420, 600, 240);
+    private static Rectangle VictoryMainMenuButtonBounds => new(VictoryPanel.X + 32, VictoryPanel.Bottom - 64, VictoryPanel.Width - 64, 46);
 
     private void DrawVictoryOverlay()
     {
-        var viewport = _graphicsDevice.Viewport;
-        _spriteBatch.Draw(_pixel, new Rectangle(0, 0, viewport.Width, viewport.Height), Color.Black * 0.68f);
-
-        int width = Math.Min(560, Math.Max(280, viewport.Width - 32));
-        const int height = 240;
-        var panel = new Rectangle(
-            (viewport.Width - width) / 2,
-            (viewport.Height - height) / 2,
-            width,
-            height);
+        _spriteBatch.Draw(_pixel, DesignArea, Color.Black * 0.68f);
+        var panel = VictoryPanel;
         DrawPanel(panel);
-
-        string winnerName = _snapshot?.Players
-            .FirstOrDefault(player => player.Id == _snapshot.WinnerPlayerId)?.Name
-            ?? _snapshot?.WinnerPlayerId?.ToString("N") ?? "Неизвестный игрок";
-
-        DrawCenteredText("ИГРА ОКОНЧЕНА", _uiTitleFont, panel, panel.Y + 32, new Color(242, 228, 202));
-        DrawCenteredText($"Победитель: {winnerName}", _uiFont, panel, panel.Y + 84, new Color(240, 196, 112));
-        DrawCenteredText("Партия успешно завершена!", _uiFont, panel, panel.Y + 120, new Color(206, 194, 172));
-
-        var button = VictoryMainMenuButtonBounds;
-        DrawButton(button, "В главное меню", true, button.Contains(Mouse.GetState().Position));
+        string winner = _snapshot?.Players.FirstOrDefault(p => p.Id == _snapshot.WinnerPlayerId)?.Name ?? "Неизвестный игрок";
+        DrawCenteredText("Игра окончена", _uiTitleFont, panel, panel.Y + 36, Ivory);
+        DrawCenteredText($"Победитель: {winner}", _uiFont, panel, panel.Y + 102, Ivory);
+        DrawButton(VictoryMainMenuButtonBounds, "В главное меню", true, VictoryMainMenuButtonBounds.Contains(HudMouse));
     }
 
     private void DrawCenteredText(string text, SpriteFontBase font, Rectangle panel, int y, Color color)
@@ -1452,47 +1250,6 @@ public class MapScreen
             color);
     }
 
-    private void DrawOwnResources(Rectangle headerPanel)
-    {
-        if (_snapshot?.You is not { } player) return;
-
-        (ResourceType Type, string Label)[] resources =
-        {
-            (ResourceType.Meat, "Мясо"),
-            (ResourceType.Bone, "Кость"),
-            (ResourceType.Flint, "Кремень"),
-            (ResourceType.Hides, "Шкуры"),
-        };
-
-        const int gapX = 8;
-        const int gapY = 2;
-        const int horizontalPadding = 12;
-        int cellWidth = (headerPanel.Width - horizontalPadding * 2 - gapX) / 2;
-        int cellHeight = 24;
-        int startY = headerPanel.Y + 102;
-
-        for (int i = 0; i < resources.Length; i++)
-        {
-            int column = i % 2;
-            int row = i / 2;
-            var bounds = new Rectangle(
-                headerPanel.X + horizontalPadding + column * (cellWidth + gapX),
-                startY + row * (cellHeight + gapY),
-                cellWidth,
-                cellHeight);
-            _spriteBatch.Draw(_pixel, bounds, new Color(24, 23, 20) * 0.92f);
-            _spriteBatch.Draw(_pixel, new Rectangle(bounds.X, bounds.Y, bounds.Width, 1), new Color(142, 119, 82) * 0.8f);
-            _spriteBatch.Draw(_pixel, new Rectangle(bounds.X, bounds.Bottom - 1, bounds.Width, 1), new Color(142, 119, 82) * 0.8f);
-
-            string text = $"{resources[i].Label} {player.Resource(resources[i].Type)}";
-            _spriteBatch.DrawString(
-                _uiFont,
-                text,
-                new Vector2(bounds.X + 8, bounds.Y),
-                new Color(242, 228, 202));
-        }
-    }
-
     private void DrawMessage()
     {
         if (_message is null) return;
@@ -1500,16 +1257,8 @@ public class MapScreen
         const int panelWidth = 380;
         var lines = WrapText(_message, panelWidth - 32f);
         const int lineHeight = 26;
-        var playersPanel = PlayersPanelBounds(_snapshot?.Players.Count ?? 0);
-        int x = _graphicsDevice.Viewport.Width - panelWidth - 16;
-        if (CanTrade)
-            x = Math.Min(x, TradePanelBounds.X - panelWidth - 12);
-        else if (CanBuild)
-            x = Math.Min(x, ProgressPanelBounds.X - panelWidth - 12);
-
         var panel = new Rectangle(
-            Math.Max(16, x),
-            playersPanel.Bottom + 10,
+            800, Math.Min(956, 1060 - 14 - lines.Count * lineHeight),
             panelWidth,
             14 + lines.Count * lineHeight);
         DrawPanel(panel);
@@ -1529,7 +1278,7 @@ public class MapScreen
     private void DrawSetupInstructions()
     {
         var you = _snapshot?.You;
-        var bounds = new Rectangle(16, _graphicsDevice.Viewport.Height - 94 - 16, 430, 94);
+        var bounds = new Rectangle(788, 950, 660, 110);
         DrawPanel(bounds);
 
         var text = CanPlaceInitialCamp
@@ -1565,76 +1314,6 @@ public class MapScreen
         return lines;
     }
 
-    private void DrawPlayersPanel()
-    {
-        const int cardW = 280;
-        const int cardH = 72;
-        const int gapX = 10;
-        const int gapY = 8;
-
-        var players = _snapshot!.Players;
-        var panel = PlayersPanelBounds(players.Count);
-        DrawPanel(panel);
-
-        int maxCols = _graphicsDevice.Viewport.Width >= 1380 ? 3 : 2;
-        int cols = Math.Min(maxCols, Math.Max(1, players.Count));
-
-        for (int i = 0; i < players.Count; i++)
-        {
-            var player = players[i];
-            int col = i % cols;
-            int row = i / cols;
-            int x = panel.X + 8 + col * (cardW + gapX);
-            int y = panel.Y + 8 + row * (cardH + gapY);
-
-            var cardBounds = new Rectangle(x, y, cardW, cardH);
-            _spriteBatch.Draw(_pixel, cardBounds, new Color(28, 26, 23) * 0.7f);
-
-            Color color = PlayerColorToXna(player.Color);
-            string name = player.Id == _snapshot.CurrentPlayerId
-                ? $"{player.Name} ★"
-                : player.Name;
-            _spriteBatch.Draw(_pixel, new Rectangle(x + 8, y + 7, 12, 12), color);
-            _spriteBatch.DrawString(
-                _uiFont,
-                name,
-                new Vector2(x + 26, y + 2),
-                new Color(238, 228, 208));
-
-            string resourcesLine =
-                $"Мясо {player.Resource(ResourceType.Meat)} · " +
-                $"Кость {player.Resource(ResourceType.Bone)} · " +
-                $"Кремень {player.Resource(ResourceType.Flint)} · " +
-                $"Шкуры {player.Resource(ResourceType.Hides)}";
-            _spriteBatch.DrawString(
-                _uiFont,
-                resourcesLine,
-                new Vector2(x + 8, y + 26),
-                new Color(206, 194, 172),
-                scale: new Vector2(0.80f));
-
-            string unitsLine =
-                $"Лагеря {player.Camps.Count} · Иссл. {player.Explorers.Count} · Племена {player.TribesCollected}";
-            _spriteBatch.DrawString(
-                _uiFont,
-                unitsLine,
-                new Vector2(x + 8, y + 47),
-                new Color(176, 166, 148),
-                scale: new Vector2(0.82f));
-        }
-    }
-
-    private void DrawActionButtons()
-    {
-        var mouse = Mouse.GetState();
-
-        var roll = RollButton;
-        DrawButton(roll, "Бросок", CanRoll, roll.Contains(mouse.Position));
-
-        var endTurn = EndTurnButton;
-        DrawButton(endTurn, EndTurnLabel, CanEndTurn, endTurn.Contains(mouse.Position));
-    }
-
     private void DrawDiscardPanel()
     {
         if (_snapshot?.You is not { } player || player.DiscardResourcesRequired is not int required)
@@ -1650,9 +1329,9 @@ public class MapScreen
 
         int selected = _discardSelection.Values.Sum();
         string instruction = $"Выбрано {selected}/{required}";
-        _spriteBatch.DrawString(_uiFont, instruction, new Vector2(panel.X + 12, panel.Y + 30), new Color(206, 194, 172));
+        _spriteBatch.DrawString(_uiFont, instruction, new Vector2(panel.X + 12, panel.Y + 36), new Color(206, 194, 172));
 
-        var mouse = Mouse.GetState();
+        var mouse = HudMouse;
         ResourceType[] resources = Enum.GetValues<ResourceType>();
         for (int i = 0; i < resources.Length; i++)
         {
@@ -1663,14 +1342,14 @@ public class MapScreen
             string label = $"{ResourceName(resource)}: {amount}/{player.Resource(resource)}";
             _spriteBatch.DrawString(_uiFont, label, new Vector2(row.X + 4, row.Y + 4), new Color(238, 228, 208));
             bool canEdit = !Busy;
-            DrawButton(new Rectangle(controlX, row.Y, 42, row.Height), "−10", canEdit && amount > 0, new Rectangle(controlX, row.Y, 42, row.Height).Contains(mouse.Position));
-            DrawButton(new Rectangle(controlX + 46, row.Y, 38, row.Height), "−", canEdit && amount > 0, new Rectangle(controlX + 46, row.Y, 38, row.Height).Contains(mouse.Position));
-            DrawButton(new Rectangle(controlX + 88, row.Y, 38, row.Height), "+", canEdit && amount < player.Resource(resource), new Rectangle(controlX + 88, row.Y, 38, row.Height).Contains(mouse.Position));
-            DrawButton(new Rectangle(controlX + 130, row.Y, 42, row.Height), "+10", canEdit && amount < player.Resource(resource), new Rectangle(controlX + 130, row.Y, 42, row.Height).Contains(mouse.Position));
+            DrawButton(new Rectangle(controlX, row.Y, 42, row.Height), "−10", canEdit && amount > 0, new Rectangle(controlX, row.Y, 42, row.Height).Contains(mouse));
+            DrawButton(new Rectangle(controlX + 46, row.Y, 38, row.Height), "−", canEdit && amount > 0, new Rectangle(controlX + 46, row.Y, 38, row.Height).Contains(mouse));
+            DrawButton(new Rectangle(controlX + 88, row.Y, 38, row.Height), "+", canEdit && amount < player.Resource(resource), new Rectangle(controlX + 88, row.Y, 38, row.Height).Contains(mouse));
+            DrawButton(new Rectangle(controlX + 130, row.Y, 42, row.Height), "+10", canEdit && amount < player.Resource(resource), new Rectangle(controlX + 130, row.Y, 42, row.Height).Contains(mouse));
         }
 
         var submit = new Rectangle(panel.X + 12, panel.Bottom - 42, panel.Width - 24, 32);
-        DrawButton(submit, "Сбросить выбранное", CanSubmitDiscard, submit.Contains(mouse.Position));
+        DrawButton(submit, "Сбросить выбранное", CanSubmitDiscard, submit.Contains(mouse));
     }
 
     private void DrawPendingWaitPanel()
@@ -1698,35 +1377,13 @@ public class MapScreen
             new Color(240, 196, 112));
     }
 
-    private void DrawBoardActionButtons()
-    {
-        var bounds = BoardActionButtonsBounds;
-        var mouse = Mouse.GetState();
-        var actions = new[]
-        {
-            (BoardActionMode.CreateExplorer, "Исследователь"),
-            (BoardActionMode.MoveExplorer, "Переместить"),
-            (BoardActionMode.ConvertToCamp, "Лагерь"),
-        };
-
-        for (int i = 0; i < actions.Length; i++)
-        {
-            var button = new Rectangle(bounds.X + i * 170, bounds.Y, 160, bounds.Height);
-            bool active = _boardActionMode == actions[i].Item1;
-            string label = actions[i].Item1 == BoardActionMode.MoveExplorer && active && _selectedRoute.Count > 1
-                ? $"Переместить ({_selectedRoute.Count - 1})"
-                : actions[i].Item2;
-            DrawButton(button, label, true, active || button.Contains(mouse.Position));
-        }
-    }
-
     private void DrawIncomingTradePanel()
     {
         if (_snapshot?.PendingTrade is not { } trade) return;
 
         var panel = IncomingTradePanelBounds;
         DrawPanel(panel);
-        var mouse = Mouse.GetState();
+        var mouse = HudMouse;
 
         string sourceName = _snapshot.Players
             .FirstOrDefault(p => p.Id == trade.SourcePlayerId)?.Name ?? "Игрок";
@@ -1746,8 +1403,8 @@ public class MapScreen
         int buttonWidth = (panel.Width - 36) / 2;
         var acceptButton = new Rectangle(panel.X + 12, panel.Bottom - 46, buttonWidth, 34);
         var declineButton = new Rectangle(acceptButton.Right + 12, panel.Bottom - 46, buttonWidth, 34);
-        DrawButton(acceptButton, "Принять", canAfford, canAfford && acceptButton.Contains(mouse.Position));
-        DrawButton(declineButton, "Отклонить", true, declineButton.Contains(mouse.Position));
+        DrawButton(acceptButton, "Принять", canAfford, canAfford && acceptButton.Contains(mouse));
+        DrawButton(declineButton, "Отклонить", true, declineButton.Contains(mouse));
     }
 
     private static string ResourceName(ResourceType resource) => resource switch
@@ -1769,7 +1426,7 @@ public class MapScreen
     {
         var panel = TradePanelBounds;
         DrawPanel(panel);
-        var mouse = Mouse.GetState();
+        var mouse = HudMouse;
         _spriteBatch.DrawString(_uiTitleFont, "Торговля", new Vector2(panel.X + 12, panel.Y + 6), new Color(242, 228, 202));
 
         var playerMode = new Rectangle(panel.X + 12, panel.Y + 34, 150, 32);
@@ -1786,7 +1443,7 @@ public class MapScreen
             {
                 var target = new Rectangle(panel.X + 12, y, panel.Width - 24, 34);
                 bool selected = _tradeTargetId == player.Id;
-                DrawButton(target, player.Name, true, selected || target.Contains(mouse.Position));
+                DrawButton(target, player.Name, true, selected || target.Contains(mouse));
                 y += 38;
             }
 
@@ -1818,17 +1475,17 @@ public class MapScreen
                 bool canGivePlus = giveAmount < available && reqAmount == 0;
                 var giveMinus = new Rectangle(panel.Right - 226, y, 26, 32);
                 var givePlus = new Rectangle(panel.Right - 166, y, 26, 32);
-                DrawButton(giveMinus, "−", giveAmount > 0, giveMinus.Contains(mouse.Position));
+                DrawButton(giveMinus, "−", giveAmount > 0, giveMinus.Contains(mouse));
                 _spriteBatch.DrawString(_uiFont, giveAmount.ToString(), new Vector2(panel.Right - 194, y + 5), new Color(242, 228, 202));
-                DrawButton(givePlus, "+", canGivePlus, canGivePlus && givePlus.Contains(mouse.Position));
+                DrawButton(givePlus, "+", canGivePlus, canGivePlus && givePlus.Contains(mouse));
 
                 // Прошу
                 bool canReqPlus = targetPlayer is not null && reqAmount < targetAvailable && giveAmount == 0;
                 var reqMinus = new Rectangle(panel.Right - 104, y, 26, 32);
                 var reqPlus = new Rectangle(panel.Right - 44, y, 26, 32);
-                DrawButton(reqMinus, "−", reqAmount > 0, reqMinus.Contains(mouse.Position));
+                DrawButton(reqMinus, "−", reqAmount > 0, reqMinus.Contains(mouse));
                 _spriteBatch.DrawString(_uiFont, reqAmount.ToString(), new Vector2(panel.Right - 72, y + 5), new Color(242, 228, 202));
-                DrawButton(reqPlus, "+", canReqPlus, canReqPlus && reqPlus.Contains(mouse.Position));
+                DrawButton(reqPlus, "+", canReqPlus, canReqPlus && reqPlus.Contains(mouse));
 
                 y += 42;
             }
@@ -1843,8 +1500,8 @@ public class MapScreen
             {
                 var minus = new Rectangle(panel.Right - 128, y, 28, 32);
                 var plus = new Rectangle(panel.Right - 92, y, 28, 32);
-                DrawButton(minus, "−", true, minus.Contains(mouse.Position));
-                DrawButton(plus, "+", true, plus.Contains(mouse.Position));
+                DrawButton(minus, "−", true, minus.Contains(mouse));
+                DrawButton(plus, "+", true, plus.Contains(mouse));
 
                 _tradeOffer.TryGetValue(resource, out int amount);
                 int available = _snapshot!.You?.Resource(resource) ?? 0;
@@ -1857,43 +1514,7 @@ public class MapScreen
         }
 
         var submit = new Rectangle(panel.X + 12, panel.Bottom - 44, panel.Width - 24, 34);
-        DrawButton(submit, _tradeMode == TradeMode.Bank ? "Обменять" : "Предложить обмен", true, submit.Contains(mouse.Position));
-    }
-
-    private void DrawProgressPanel()
-    {
-        if (_snapshot?.You is not { } player) return;
-
-        var panel = ProgressPanelBounds;
-        DrawPanel(panel);
-        _spriteBatch.DrawString(
-            _uiTitleFont,
-            "Развитие",
-            new Vector2(panel.X + 12, panel.Y + 6),
-            new Color(242, 228, 202));
-
-        for (int i = 0; i < ProgressTypes.Length; i++)
-        {
-            var progressType = ProgressTypes[i];
-            int level = player.ProgressLevel(progressType);
-            bool canAdvance = level < 5 && HasResources(
-                player,
-                ProgressCost(level + 1).Select(item => (item.Key, item.Value)).ToArray());
-            var button = ProgressButtonBounds(i);
-            string buttonText = level >= 5
-                ? $"{ProgressName(progressType)} MAX"
-                : $"{ProgressName(progressType)}: {level} -> {level + 1}";
-            DrawButton(button, buttonText, canAdvance, button.Contains(Mouse.GetState().Position));
-
-            var cost = ProgressCost(level + 1);
-            string costText = level >= 5 ? "Макс. уровень" : $"Цена: {ProgressCostLabel(cost)}";
-            _spriteBatch.DrawString(
-                _uiFont,
-                costText,
-                new Vector2(panel.X + 180, button.Y + 8),
-                canAdvance ? new Color(206, 194, 172) : new Color(144, 132, 116),
-                scale: new Vector2(0.92f));
-        }
+        DrawButton(submit, _tradeMode == TradeMode.Bank ? "Обменять" : "Предложить обмен", true, submit.Contains(mouse));
     }
 
     // В фазах броска и торговли та же кнопка двигает фазу, а не передаёт ход.
@@ -1906,33 +1527,7 @@ public class MapScreen
 
     private void DrawButton(Rectangle bounds, string text, bool enabled, bool hovered)
     {
-        var shadowBounds = new Rectangle(bounds.X + 2, bounds.Y + 2, bounds.Width, bounds.Height);
-        _spriteBatch.Draw(_pixel, shadowBounds, Color.Black * 0.45f);
-
-        Color fill = !enabled
-            ? new Color(38, 36, 32)
-            : hovered ? new Color(104, 84, 56) : new Color(70, 56, 40);
-        _spriteBatch.Draw(_pixel, bounds, fill);
-
-        Color border = enabled ? new Color(198, 170, 120) : new Color(88, 82, 72);
-        _spriteBatch.Draw(_pixel, new Rectangle(bounds.X, bounds.Y, bounds.Width, 2), border);
-        _spriteBatch.Draw(_pixel, new Rectangle(bounds.X, bounds.Bottom - 2, bounds.Width, 2), border);
-        _spriteBatch.Draw(_pixel, new Rectangle(bounds.X, bounds.Y, 2, bounds.Height), border);
-        _spriteBatch.Draw(_pixel, new Rectangle(bounds.Right - 2, bounds.Y, 2, bounds.Height), border);
-
-        Vector2 size = _uiFont.MeasureString(text);
-        float maxWidth = Math.Max(20f, bounds.Width - 12f);
-        float scale = size.X > maxWidth ? maxWidth / size.X : 1f;
-        var textPos = new Vector2(
-            bounds.X + (bounds.Width - size.X * scale) / 2f,
-            bounds.Y + (bounds.Height - size.Y * scale) / 2f);
-        _spriteBatch.DrawString(_uiFont, text, textPos + new Vector2(1.5f, 1.5f), Color.Black * 0.65f, scale: new Vector2(scale));
-        _spriteBatch.DrawString(
-            _uiFont,
-            text,
-            textPos,
-            enabled ? new Color(246, 236, 214) : new Color(132, 124, 112),
-            scale: new Vector2(scale));
+        DrawPaintedButton(bounds, text, enabled, hovered);
     }
 
     private static string PhaseName(TurnPhase phase) => phase switch
@@ -1942,19 +1537,6 @@ public class MapScreen
         TurnPhase.Actions => "действия",
         _ => phase.ToString(),
     };
-
-    private void DrawPanel(Rectangle bounds)
-    {
-        var shadowBounds = new Rectangle(bounds.X + 4, bounds.Y + 4, bounds.Width, bounds.Height);
-        _spriteBatch.Draw(_pixel, shadowBounds, Color.Black * 0.45f);
-        _spriteBatch.Draw(_pixel, bounds, new Color(20, 18, 16) * 0.86f);
-
-        var border = new Color(146, 122, 84) * 0.92f;
-        _spriteBatch.Draw(_pixel, new Rectangle(bounds.X, bounds.Y, bounds.Width, 2), border);
-        _spriteBatch.Draw(_pixel, new Rectangle(bounds.X, bounds.Bottom - 2, bounds.Width, 2), border);
-        _spriteBatch.Draw(_pixel, new Rectangle(bounds.X, bounds.Y, 2, bounds.Height), border);
-        _spriteBatch.Draw(_pixel, new Rectangle(bounds.Right - 2, bounds.Y, 2, bounds.Height), border);
-    }
 
     private Texture2D CreateCircleTexture(int size)
     {
@@ -2008,21 +1590,10 @@ public class MapScreen
     {
         PlayerColor.Red => new Color(214, 69, 65),
         PlayerColor.Blue => new Color(66, 122, 214),
-        PlayerColor.White => new Color(238, 236, 228),
-        PlayerColor.Orange => new Color(226, 138, 54),
+        PlayerColor.White => new Color(96, 153, 78),
+        PlayerColor.Orange => new Color(240, 190, 62),
         _ => Color.Magenta,
     };
-
-    private Matrix FitToScreen(int width, int height, float margin)
-    {
-        Vector2 size = _boardMax - _boardMin;
-
-        const float mapScale = 0.80f;
-        float scale = MathF.Min((width - 2 * margin) / size.X, (height - 2 * margin) / size.Y) * mapScale;
-        Vector2 offset = new Vector2(width, height) / 2f - (_boardMin + size / 2f) * scale;
-
-        return Matrix.CreateScale(scale, scale, 1f) * Matrix.CreateTranslation(offset.X, offset.Y, 0f);
-    }
 
     private static Color TerrainColor(TerrainType terrain) => terrain switch
     {
