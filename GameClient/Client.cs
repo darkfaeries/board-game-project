@@ -188,6 +188,15 @@ namespace GameClient
         protected override void LoadContent()
         {
             MyraEnvironment.Game = this;
+            if (OperatingSystem.IsMacOS())
+            {
+                MyraEnvironment.MouseInfoGetter = () =>
+                {
+                    var mouse = MyraEnvironment.DefaultMouseInfoGetter();
+                    mouse.Position = WindowPointer.InViewport(GraphicsDevice);
+                    return mouse;
+                };
+            }
             BuildUI();
 
             _mapScreen = new MapScreen(GraphicsDevice, Content);
@@ -401,9 +410,9 @@ namespace GameClient
             _createButton = new Button { Content = createTextContainer };
             StyleAssetButton(_createButton, buttonTex, 300, 110);
 
-            _createButton.TouchDown += (s, e) => { _createButton.Left = 4; _createButton.Top = 4; };
-            _createButton.TouchUp += (s, e) => { _createButton.Left = 0; _createButton.Top = 0; };
-            _createButton.TouchLeft += (s, e) => { _createButton.Left = 0; _createButton.Top = 0; };
+            _createButton.TouchDown += (s, e) => { createTextContainer.Left = 4; createTextContainer.Top = 4; };
+            _createButton.TouchUp += (s, e) => { createTextContainer.Left = 0; createTextContainer.Top = 0; };
+            _createButton.TouchLeft += (s, e) => { createTextContainer.Left = 0; createTextContainer.Top = 0; };
 
             _createButton.Click += (s, a) => OnCreateClicked();
             buttonsPanel.Widgets.Add(WrapWithShadow(_createButton, buttonTex, 300, 110));
@@ -417,9 +426,9 @@ namespace GameClient
             _connectButton = new Button { Content = connectTextContainer };
             StyleAssetButton(_connectButton, buttonTex, 300, 110);
 
-            _connectButton.TouchDown += (s, e) => { _connectButton.Left = 4; _connectButton.Top = 4; };
-            _connectButton.TouchUp += (s, e) => { _connectButton.Left = 0; _connectButton.Top = 0; };
-            _connectButton.TouchLeft += (s, e) => { _connectButton.Left = 0; _connectButton.Top = 0; };
+            _connectButton.TouchDown += (s, e) => { connectTextContainer.Left = 4; connectTextContainer.Top = 4; };
+            _connectButton.TouchUp += (s, e) => { connectTextContainer.Left = 0; connectTextContainer.Top = 0; };
+            _connectButton.TouchLeft += (s, e) => { connectTextContainer.Left = 0; connectTextContainer.Top = 0; };
 
             _connectButton.Click += (s, a) => OnConnectClicked();
             buttonsPanel.Widgets.Add(WrapWithShadow(_connectButton, buttonTex, 300, 110));
@@ -433,9 +442,9 @@ namespace GameClient
             var exitButton = new Button { Content = exitTextContainer };
             StyleAssetButton(exitButton, buttonTex, 300, 110);
 
-            exitButton.TouchDown += (s, e) => { exitButton.Left = 4; exitButton.Top = 4; };
-            exitButton.TouchUp += (s, e) => { exitButton.Left = 0; exitButton.Top = 0; };
-            exitButton.TouchLeft += (s, e) => { exitButton.Left = 0; exitButton.Top = 0; };
+            exitButton.TouchDown += (s, e) => { exitTextContainer.Left = 4; exitTextContainer.Top = 4; };
+            exitButton.TouchUp += (s, e) => { exitTextContainer.Left = 0; exitTextContainer.Top = 0; };
+            exitButton.TouchLeft += (s, e) => { exitTextContainer.Left = 0; exitTextContainer.Top = 0; };
 
             exitButton.Click += (s, a) => Exit();
             buttonsPanel.Widgets.Add(WrapWithShadow(exitButton, buttonTex, 300, 110));

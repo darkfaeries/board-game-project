@@ -345,7 +345,7 @@ public partial class MapScreen
         bool releasedThisFrame = _previousMouse.LeftButton == ButtonState.Pressed &&
                                  mouse.LeftButton == ButtonState.Released;
 
-        if (releasedThisFrame) HandleClick(ToHud(mouse.Position));
+        if (releasedThisFrame) HandleClick(HudMouse);
         _previousMouse = mouse;
     }
 

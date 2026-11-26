@@ -51,7 +51,7 @@ public partial class MapScreen
     }
 
     private Point ToHud(Point point) => Vector2.Transform(point.ToVector2(), Matrix.Invert(HudToScreen)).ToPoint();
-    private Point HudMouse => ToHud(Mouse.GetState().Position);
+    private Point HudMouse => ToHud(WindowPointer.InViewport(_graphicsDevice));
     private static Rectangle ExplorerOption(int index) => new(1180, 615 + index * 70, 280, 64);
 
     private void LoadPaintedArt()
