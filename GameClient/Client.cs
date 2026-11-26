@@ -33,7 +33,8 @@ namespace GameClient
         private Label _createLabelShadow = null!;
         private Label _statusLabelMain = null!;
         private Label _statusLabelShadow = null!;
-        private TextBox _codeInput = null!;
+        private SessionCodeInput _codeInput = null!;
+        private string? _createdRoomCode;
         private Button _connectButton = null!;
         private Label _connectLabelMain = null!;
         private Label _connectLabelShadow = null!;
@@ -190,6 +191,13 @@ namespace GameClient
             MyraEnvironment.Game = this;
             if (OperatingSystem.IsMacOS())
             {
+                // Myra implements editing shortcuts using Control. Accept either Mac modifier.
+                MyraEnvironment.DownKeysGetter = down =>
+                {
+                    MyraEnvironment.DefaultDownKeysGetter(down);
+                    down[(int)Keys.LeftControl] |= down[(int)Keys.LeftWindows];
+                    down[(int)Keys.RightControl] |= down[(int)Keys.RightWindows];
+                };
                 MyraEnvironment.MouseInfoGetter = () =>
                 {
                     var mouse = MyraEnvironment.DefaultMouseInfoGetter();
@@ -457,6 +465,23 @@ namespace GameClient
             rootPanel.Widgets.Add(mainCardContainer);
 
             _desktop = new Desktop { Root = rootPanel };
+            _desktop.FocusedKeyboardWidget = _codeInput;
+            _desktop.KeyDown += (_, e) =>
+            {
+                bool shortcut = _desktop.IsKeyDown(Keys.LeftControl) || _desktop.IsKeyDown(Keys.RightControl);
+                bool alt = _desktop.IsKeyDown(Keys.LeftAlt) || _desktop.IsKeyDown(Keys.RightAlt);
+                if (alt) return;
+
+                if (e.Data == Keys.C && shortcut && !_codeInput.IsKeyboardFocused)
+                {
+                    string? code = _isConnected ? _networkClient.GameCode : _codeInput.Text;
+                    if (!string.IsNullOrEmpty(code)) SessionClipboard.TryCopy(code);
+                }
+
+                if (e.Data == Keys.Enter && !shortcut && _codeInput.IsKeyboardFocused && !_isConnected &&
+                    _codeInput.Text.Length == SessionCodeInput.CodeLength && _connectButton.Enabled)
+                    OnConnectClicked();
+            };
         }
 
         private Texture2D CreateVignetteTexture(int width, int height, float maxAlpha)
@@ -505,7 +530,7 @@ namespace GameClient
             var shadow = new Image { Renderable = new TextureRegion(inputTex), Color = Color.Black * 0.55f, Left = 6, Top = 6, Width = width, Height = height };
             var background = new Image { Renderable = new TextureRegion(inputTex), Width = width, Height = height };
 
-            _codeInput = new TextBox
+            _codeInput = new SessionCodeInput
             {
                 Text = "",
                 Width = width,
@@ -514,25 +539,6 @@ namespace GameClient
                 TextColor = Color.White,
                 Background = null,
                 Padding = new Thickness(75, 16)
-            };
-
-            _codeInput.TextChanged += (s, e) =>
-            {
-                string filteredText = new string(_codeInput.Text
-                    .Where(character => char.IsAsciiHexDigit(character))
-                    .Select(char.ToUpperInvariant)
-                    .ToArray());
-
-                if (filteredText.Length > 6)
-                {
-                    filteredText = filteredText.Substring(0, 6);
-                }
-
-                if (_codeInput.Text != filteredText)
-                {
-                    _codeInput.Text = filteredText;
-                    _codeInput.CursorPosition = filteredText.Length;
-                }
             };
 
             container.Widgets.Add(shadow);
@@ -677,7 +683,7 @@ namespace GameClient
             if (result.IsSuccess)
             {
                 string code = result.Data ?? string.Empty;
-                _codeInput.Text = code;
+                Interlocked.Exchange(ref _createdRoomCode, code);
                 await ConnectToSessionAsync(code);
             }
             else
@@ -753,6 +759,9 @@ namespace GameClient
 
         protected override void Update(GameTime gameTime)
         {
+            if (Interlocked.Exchange(ref _createdRoomCode, null) is { } code)
+                _codeInput.SetRoomCode(code);
+
             if (System.Threading.Interlocked.Exchange(ref _gameStartEventPending, 0) == 1)
             {
                 _gameStarted = true;
