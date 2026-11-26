@@ -370,7 +370,12 @@ public partial class MapScreen
             else if (CanEndTurn) EndTurnRequested?.Invoke();
             return;
         }
-        if (TradeButton.Contains(point) && CanTrade) { _tradeOpen = !_tradeOpen; return; }
+        if (TradeButton.Contains(point) && CanTrade)
+        {
+            _tradeOpen = !_tradeOpen;
+            EnsureTradePartner();
+            return;
+        }
         if (_tradeOpen && CanTrade && HandleTradeClick(point)) return;
         if (CanBuild)
         {
@@ -459,19 +464,6 @@ public partial class MapScreen
     {
         if (amount <= 0) _discardSelection.Remove(resource);
         else _discardSelection[resource] = amount;
-    }
-
-    private Rectangle TradePanelBounds
-    {
-        get
-        {
-            int width = _tradeMode == TradeMode.Player ? 430 : 350;
-            int playerCount = _tradeMode == TradeMode.Player
-                ? Math.Max(0, (_snapshot?.Players.Count ?? 0) - 1)
-                : 0;
-            int headerHeight = _tradeMode == TradeMode.Player ? 196 : 178;
-            return new Rectangle(1460 - width, 340, width, headerHeight + playerCount * 38 + Enum.GetValues<ResourceType>().Length * 42);
-        }
     }
 
     private static readonly Rectangle IncomingTradePanelBounds = new(500, 345, 550, 232);
@@ -847,108 +839,6 @@ public partial class MapScreen
         return true;
     }
 
-    private bool HandleTradeClick(Point point)
-    {
-        var panel = TradePanelBounds;
-        if (!panel.Contains(point)) return false;
-
-        if (HasPendingTrade)
-        {
-            ShowMessage("Дождитесь ответа игрока на текущее предложение обмена.");
-            return true;
-        }
-
-        var modeButtonsY = panel.Y + 34;
-        if (new Rectangle(panel.X + 12, modeButtonsY, 150, 32).Contains(point))
-            _tradeMode = TradeMode.Player;
-        else if (new Rectangle(panel.X + 174, modeButtonsY, 160, 32).Contains(point))
-            _tradeMode = TradeMode.Bank;
-        else
-        {
-            int y = panel.Y + 78;
-            if (_tradeMode == TradeMode.Player)
-            {
-                y += 24; // заголовок "С кем обменяться"
-                foreach (var player in _snapshot!.Players.Where(player => player.Id != _snapshot.YouPlayerId))
-                {
-                    if (new Rectangle(panel.X + 12, y, panel.Width - 24, 34).Contains(point))
-                    {
-                        if (_tradeTargetId != player.Id)
-                        {
-                            _tradeTargetId = player.Id;
-                            _tradeRequest.Clear();
-                        }
-                        return true;
-                    }
-                    y += 38;
-                }
-                y += 44; // заголовки колонок Отдаю / Прошу
-
-                var targetPlayer = _snapshot.Players.FirstOrDefault(p => p.Id == _tradeTargetId);
-                foreach (ResourceType resource in Enum.GetValues<ResourceType>())
-                {
-                    // Колонка "Отдаю": [-], [+]
-                    if (new Rectangle(panel.Right - 226, y, 26, 32).Contains(point))
-                    {
-                        AdjustTradeAmount(_tradeOffer, resource, -1, _snapshot.You?.Resource(resource) ?? 0);
-                        return true;
-                    }
-                    if (new Rectangle(panel.Right - 166, y, 26, 32).Contains(point))
-                    {
-                        if (_tradeRequest.TryGetValue(resource, out int req) && req > 0)
-                            ShowMessage("Нельзя отдавать ресурс, который вы просите в обмен.");
-                        else
-                            AdjustTradeAmount(_tradeOffer, resource, +1, _snapshot.You?.Resource(resource) ?? 0);
-                        return true;
-                    }
-
-                    // Колонка "Прошу": [-], [+]
-                    int maxRequest = targetPlayer?.Resource(resource) ?? 99;
-                    if (new Rectangle(panel.Right - 104, y, 26, 32).Contains(point))
-                    {
-                        AdjustTradeAmount(_tradeRequest, resource, -1, maxRequest);
-                        return true;
-                    }
-                    if (new Rectangle(panel.Right - 44, y, 26, 32).Contains(point))
-                    {
-                        if (_tradeOffer.TryGetValue(resource, out int give) && give > 0)
-                            ShowMessage("Нельзя просить ресурс, который вы отдаёте в обмен.");
-                        else
-                            AdjustTradeAmount(_tradeRequest, resource, +1, maxRequest);
-                        return true;
-                    }
-
-                    y += 42;
-                }
-            }
-            else
-            {
-                y += 46; // заголовок и подсказка обмена с банком
-                foreach (ResourceType resource in Enum.GetValues<ResourceType>())
-                {
-                    if (new Rectangle(panel.Right - 92, y, 28, 32).Contains(point))
-                    {
-                        AdjustTradeAmount(_tradeOffer, resource, +1, _snapshot!.You?.Resource(resource) ?? 0);
-                        return true;
-                    }
-                    if (new Rectangle(panel.Right - 128, y, 28, 32).Contains(point))
-                    {
-                        AdjustTradeAmount(_tradeOffer, resource, -1, _snapshot!.You?.Resource(resource) ?? 0);
-                        return true;
-                    }
-                    if (new Rectangle(panel.X + 12, y, panel.Width - 160, 32).Contains(point))
-                        _bankResourceToGet = resource;
-                    y += 42;
-                }
-            }
-
-            var submit = new Rectangle(panel.X + 12, panel.Bottom - 44, panel.Width - 24, 34);
-            if (submit.Contains(point)) SubmitTrade();
-        }
-
-        return true;
-    }
-
     private static void AdjustTradeAmount(Dictionary<ResourceType, int> dict, ResourceType resource, int delta, int max)
     {
         dict.TryGetValue(resource, out int current);
@@ -1068,6 +958,7 @@ public partial class MapScreen
             _selectedExplorer = null;
         }
         _snapshot = snapshot;
+        if (_tradeOpen) EnsureTradePartner();
         if (snapshot.Status is GameStatus.Setup or GameStatus.Playing &&
             _tribeCounterPlayerCount != snapshot.Players.Count)
         {
@@ -1420,101 +1311,6 @@ public partial class MapScreen
     {
         var nonZero = resources.Where(kv => kv.Value > 0).Select(kv => $"{ResourceName(kv.Key)}: {kv.Value}").ToArray();
         return nonZero.Length == 0 ? "ничего" : string.Join(", ", nonZero);
-    }
-
-    private void DrawTradePanel()
-    {
-        var panel = TradePanelBounds;
-        DrawPanel(panel);
-        var mouse = HudMouse;
-        _spriteBatch.DrawString(_uiTitleFont, "Торговля", new Vector2(panel.X + 12, panel.Y + 6), new Color(242, 228, 202));
-
-        var playerMode = new Rectangle(panel.X + 12, panel.Y + 34, 150, 32);
-        var bankMode = new Rectangle(panel.X + 174, panel.Y + 34, 160, 32);
-        DrawButton(playerMode, "С игроком", true, _tradeMode == TradeMode.Player);
-        DrawButton(bankMode, "С банком", true, _tradeMode == TradeMode.Bank);
-
-        int y = panel.Y + 78;
-        if (_tradeMode == TradeMode.Player)
-        {
-            _spriteBatch.DrawString(_uiFont, "С кем обменяться:", new Vector2(panel.X + 12, y), new Color(206, 194, 172));
-            y += 24;
-            foreach (var player in _snapshot!.Players.Where(player => player.Id != _snapshot.YouPlayerId))
-            {
-                var target = new Rectangle(panel.X + 12, y, panel.Width - 24, 34);
-                bool selected = _tradeTargetId == player.Id;
-                DrawButton(target, player.Name, true, selected || target.Contains(mouse));
-                y += 38;
-            }
-
-            if (_snapshot.PendingTrade is { } pending)
-            {
-                string targetName = _snapshot.Players.FirstOrDefault(p => p.Id == pending.TargetPlayerId)?.Name ?? "игрока";
-                _spriteBatch.DrawString(_uiFont, $"Ожидание ответа от {targetName}...", new Vector2(panel.X + 12, y + 8), new Color(240, 196, 112));
-                return;
-            }
-
-            _spriteBatch.DrawString(_uiFont, "Ресурс", new Vector2(panel.X + 12, y + 6), new Color(176, 166, 148));
-            _spriteBatch.DrawString(_uiFont, "Отдаю", new Vector2(panel.Right - 216, y + 6), new Color(238, 182, 148));
-            _spriteBatch.DrawString(_uiFont, "Прошу", new Vector2(panel.Right - 94, y + 6), new Color(180, 232, 168));
-            y += 44;
-
-            var targetPlayer = _snapshot.Players.FirstOrDefault(p => p.Id == _tradeTargetId);
-            foreach (ResourceType resource in Enum.GetValues<ResourceType>())
-            {
-                int available = _snapshot.You?.Resource(resource) ?? 0;
-                int targetAvailable = targetPlayer?.Resource(resource) ?? 0;
-                string rowLabel = targetPlayer is not null
-                    ? $"{ResourceName(resource)} ({available} | {targetAvailable})"
-                    : $"{ResourceName(resource)} ({available})";
-                _spriteBatch.DrawString(_uiFont, rowLabel, new Vector2(panel.X + 12, y + 5), new Color(238, 228, 208));
-
-                // Отдаю
-                _tradeOffer.TryGetValue(resource, out int giveAmount);
-                _tradeRequest.TryGetValue(resource, out int reqAmount);
-                bool canGivePlus = giveAmount < available && reqAmount == 0;
-                var giveMinus = new Rectangle(panel.Right - 226, y, 26, 32);
-                var givePlus = new Rectangle(panel.Right - 166, y, 26, 32);
-                DrawButton(giveMinus, "−", giveAmount > 0, giveMinus.Contains(mouse));
-                _spriteBatch.DrawString(_uiFont, giveAmount.ToString(), new Vector2(panel.Right - 194, y + 5), new Color(242, 228, 202));
-                DrawButton(givePlus, "+", canGivePlus, canGivePlus && givePlus.Contains(mouse));
-
-                // Прошу
-                bool canReqPlus = targetPlayer is not null && reqAmount < targetAvailable && giveAmount == 0;
-                var reqMinus = new Rectangle(panel.Right - 104, y, 26, 32);
-                var reqPlus = new Rectangle(panel.Right - 44, y, 26, 32);
-                DrawButton(reqMinus, "−", reqAmount > 0, reqMinus.Contains(mouse));
-                _spriteBatch.DrawString(_uiFont, reqAmount.ToString(), new Vector2(panel.Right - 72, y + 5), new Color(242, 228, 202));
-                DrawButton(reqPlus, "+", canReqPlus, canReqPlus && reqPlus.Contains(mouse));
-
-                y += 42;
-            }
-        }
-        else
-        {
-            _spriteBatch.DrawString(_uiFont, $"Получить: {ResourceName(_bankResourceToGet)}", new Vector2(panel.X + 12, y), new Color(206, 194, 172));
-            _spriteBatch.DrawString(_uiFont, "Нажмите на ресурс, который хотите получить.", new Vector2(panel.X + 12, y + 22), new Color(176, 166, 148));
-            y += 46;
-
-            foreach (ResourceType resource in Enum.GetValues<ResourceType>())
-            {
-                var minus = new Rectangle(panel.Right - 128, y, 28, 32);
-                var plus = new Rectangle(panel.Right - 92, y, 28, 32);
-                DrawButton(minus, "−", true, minus.Contains(mouse));
-                DrawButton(plus, "+", true, plus.Contains(mouse));
-
-                _tradeOffer.TryGetValue(resource, out int amount);
-                int available = _snapshot!.You?.Resource(resource) ?? 0;
-                string label = _bankResourceToGet == resource
-                    ? $"▶ {ResourceName(resource)}: {amount}/{available}"
-                    : $"{ResourceName(resource)}: {amount}/{available}";
-                _spriteBatch.DrawString(_uiFont, label, new Vector2(panel.X + 12, y + 5), new Color(238, 228, 208));
-                y += 42;
-            }
-        }
-
-        var submit = new Rectangle(panel.X + 12, panel.Bottom - 44, panel.Width - 24, 34);
-        DrawButton(submit, _tradeMode == TradeMode.Bank ? "Обменять" : "Предложить обмен", true, submit.Contains(mouse));
     }
 
     // В фазах броска и торговли та же кнопка двигает фазу, а не передаёт ход.

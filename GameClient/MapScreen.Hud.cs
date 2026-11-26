@@ -56,6 +56,7 @@ public partial class MapScreen
 
     private void LoadPaintedArt()
     {
+        _art.Add("barter-panel", Texture2D.FromFile(_graphicsDevice, System.IO.Path.Combine(ArtDirectory, "barter-panel.jpg")));
         foreach (string path in Directory.EnumerateFiles(ArtDirectory, "*.png"))
         {
             string key = System.IO.Path.GetFileNameWithoutExtension(path);
@@ -163,7 +164,6 @@ public partial class MapScreen
             DrawButton(ExplorerOption(0), "Создать исследователя", true, ExplorerOption(0).Contains(mouse));
             DrawButton(ExplorerOption(1), "Переместить", true, ExplorerOption(1).Contains(mouse));
         }
-        if (_tradeOpen && CanTrade) DrawTradePanel();
         if (game.Status == GameStatus.Setup) DrawSetupInstructions();
         else if (_message == null)
         {
@@ -175,6 +175,7 @@ public partial class MapScreen
         if (new Rectangle(22, 18, 450, 88).Contains(mouse))
             Label($"{game.You?.Name} · Код игры {game.GameCode}", new Rectangle(28, 102, 450, 38), 23, true);
         if (hoveredPlayer != null) DrawPlayerDetails(hoveredPlayer);
+        if (_tradeOpen && game.Phase == TurnPhase.Trade && game.IsMyTurn) DrawTradePanel();
         if (HasPendingDiscards)
         {
             if (HasPendingDiscard) DrawDiscardPanel();
