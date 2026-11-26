@@ -71,7 +71,7 @@ namespace GameClient
         private bool _gameStarted;
         private int _gameStartEventPending;
 
-        public Client()
+        public Client(GameClient? networkClient = null)
         {
             _graphics = new GraphicsDeviceManager(this);
             var displayMode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
@@ -94,7 +94,7 @@ namespace GameClient
             Window.KeyDown += OnKeyDown;
 
             // Укажите URL вашего SignalR хаба
-            _networkClient = new GameClient("http://localhost:5285", NullLogger<GameClient>.Instance);
+            _networkClient = networkClient ?? new GameClient("http://localhost:5285", NullLogger<GameClient>.Instance);
 
             _networkClient.PlayerCountChanged += (playerCount) =>
             {

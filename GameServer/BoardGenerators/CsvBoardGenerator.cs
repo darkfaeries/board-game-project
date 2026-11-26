@@ -1,9 +1,18 @@
+using System.Collections.Concurrent;
+
 namespace GameServer;
 
 public class CsvBoardGenerator
 {
     private readonly string _mapsPath;
     private readonly ILogger<CsvBoardGenerator> _logger;
+    private readonly ConcurrentDictionary<string, CachedMapData> _cache = new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed record CachedMapData(
+        IReadOnlyDictionary<AxialCoords, Hex> Hexes,
+        IReadOnlyDictionary<AxialCoords, Node> Nodes,
+        IReadOnlyDictionary<Path, ExplorationPath> ExplorationPaths,
+        IReadOnlySet<Path> BlockedPaths);
 
     public CsvBoardGenerator(ILogger<CsvBoardGenerator> logger)
     {
@@ -12,6 +21,18 @@ public class CsvBoardGenerator
     }
 
     public BoardState GenerateBoard(string mapName)
+    {
+        var cached = _cache.GetOrAdd(mapName, LoadAndParseMap);
+        var copy = CloneCachedMap(cached);
+
+        return new BoardState(
+            new Dictionary<AxialCoords, Hex>(copy.Hexes),
+            new Dictionary<AxialCoords, Node>(copy.Nodes),
+            new Dictionary<Path, ExplorationPath>(copy.ExplorationPaths),
+            new HashSet<Path>(copy.BlockedPaths));
+    }
+
+    private CachedMapData LoadAndParseMap(string mapName)
     {
         _logger.LogInformation("Generating board from CSV files in {MapsPath} for map {MapName}.", _mapsPath, mapName);
 
@@ -29,17 +50,52 @@ public class CsvBoardGenerator
         var path_data = ReadPathsCsv(pathsReader);
         var explorationPaths = path_data.Item1;
         var blockedPaths = path_data.Item2;
-    
-
-        var board = new BoardState(hexes, nodes, explorationPaths, blockedPaths);
 
         _logger.LogInformation(
-            "Board generated: {HexCount} hexes, {NodeCount} nodes, {PathCount} paths.",
-            board.Hexes.Count,
-            board.Nodes.Count,
-            board.ExplorationPaths.Count);
+            "Map {MapName} cached: {HexCount} hexes, {NodeCount} nodes, {PathCount} paths.",
+            mapName,
+            hexes.Count,
+            nodes.Count,
+            explorationPaths.Count);
 
-        return board;
+        return new CachedMapData(hexes, nodes, explorationPaths, blockedPaths);
+    }
+
+    private CachedMapData CloneCachedMap(CachedMapData cached)
+    {
+        var hexes = cached.Hexes.ToDictionary(
+            pair => pair.Key,
+            pair => new Hex(
+                pair.Value.Coords,
+                pair.Value.Terrain,
+                pair.Value.NumberToken,
+                pair.Value.Region));
+
+        var nodes = cached.Nodes.ToDictionary(
+            pair => pair.Key,
+            pair => new Node(
+                pair.Value.Coords,
+                pair.Value.Tribe,
+                pair.Value.IsStartSpace,
+                pair.Value.CanSettle,
+                pair.Value.CanSettle3p));
+
+        var explorationPaths = cached.ExplorationPaths.ToDictionary(
+            pair => new Path(pair.Key.from, pair.Key.to),
+            pair => new ExplorationPath(
+                pair.Value.ClothingRequirement,
+                pair.Value.ShelterRequirement,
+                Tribe.Asians));
+
+        var blockedPaths = cached.BlockedPaths
+            .Select(path => new Path(path.from, path.to))
+            .ToHashSet();
+
+        return new CachedMapData(
+            hexes,
+            nodes,
+            explorationPaths,
+            blockedPaths);
     }
 
     private static Dictionary<string, TerrainType> terrain_names = new Dictionary<string, TerrainType>
@@ -91,7 +147,7 @@ public class CsvBoardGenerator
             int number = int.Parse(fields[dict["number"]].Trim());
             TerrainType terrain = terrain_names[fields[dict["terrain"]].Trim()];
 
-            hexes.Add(coords, new Hex(coords, terrain, number, region)); 
+            hexes.Add(coords, new Hex(coords, terrain, number, region));
         }
 
         return hexes;
@@ -145,7 +201,7 @@ public class CsvBoardGenerator
                 tribe = tribe_names[fields[dict["tribe"]].Trim()];
             }
 
-            nodes.Add(coords, new Node(coords, tribe, start, settle, settle_3player)); 
+            nodes.Add(coords, new Node(coords, tribe, start, settle, settle_3player));
         }
 
         return nodes;
@@ -187,7 +243,7 @@ public class CsvBoardGenerator
             Path path = new Path(from_coords, to_coords);
 
             bool is_blocked = bool.Parse(fields[dict["no_path"]].Trim());
-            if (is_blocked) 
+            if (is_blocked)
             {
                 blocked_paths.Add(path);
                 continue;

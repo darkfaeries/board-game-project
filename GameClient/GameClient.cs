@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -15,6 +16,7 @@ public class GameClient : IAsyncDisposable
     private readonly ILogger<GameClient> _logger;
     private HubConnection? _hub;
     private bool _hasJoinedSession;
+    private readonly HttpClient _httpClient;
     private string? _accessToken;
 
     public string? GameCode { get; private set; }
@@ -41,9 +43,11 @@ public class GameClient : IAsyncDisposable
     public event Action<InitialPlacementSubmittedEvent>? InitialPlacementSubmitted;
 
 
-    public GameClient(string baseUrl, ILogger<GameClient> logger)
+    public GameClient(
+        string baseUrl, ILogger<GameClient> logger, HttpClient? httpClient = null)
     {
         _baseUrl = baseUrl.TrimEnd('/');
+        _httpClient = httpClient ?? new HttpClient();
         _logger = logger;
     }
 
@@ -220,7 +224,7 @@ public class GameClient : IAsyncDisposable
 
     public Task<(bool Ok, string? Error)> EndTurnAsync() =>
         InvokeGameMethodAsync("EndTurn", false);
-    
+
     public Task<(bool Ok, string? Error)> SubmitInitialPlacementAsync(AxialCoords nodeCoords) =>
         InvokeGameMethodAsync("SubmitInitialPlacement", false, nodeCoords);
 
@@ -302,7 +306,7 @@ public class GameClient : IAsyncDisposable
         _hub.On<TurnChangedEvent>("TurnChanged", value => TurnChanged?.Invoke(value));
         _hub.On<SevenRolledEvent>("SevenRolled", value => SevenRolled?.Invoke(value));
         _hub.On<DiscardResourcesSubmittedEvent>(
-            "DiscardResourcesSubmitted", 
+            "DiscardResourcesSubmitted",
             value => DiscardResourcesSubmitted?.Invoke(value));
         _hub.On<TradeDecisionSubmittedEvent>(
             "TradeDecisionSubmitted",
@@ -324,7 +328,7 @@ public class GameClient : IAsyncDisposable
         _hub.On<InitialPlacementSubmittedEvent>(
             "InitialPlacementSubmitted",
             value => InitialPlacementSubmitted?.Invoke(value));
-        
+
         await _hub.StartAsync();
     }
 
@@ -378,6 +382,33 @@ public class GameClient : IAsyncDisposable
         _ => throw new InvalidOperationException(
             $"Unsupported argument count {args.Length} for hub method {methodName}."),
     };
+
+    public async Task AuthenticateForDevelopmentAsync()
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"{_baseUrl}/api/auth/dev/login",
+            new
+            {
+                username = "dev",
+                password = ""
+            });
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+
+            throw new HttpRequestException(
+                $"Development login failed: {response.StatusCode}. {error}");
+        }
+
+        _accessToken = await response.Content.ReadAsStringAsync();
+
+        if (string.IsNullOrWhiteSpace(_accessToken))
+        {
+            throw new InvalidOperationException(
+                "Development login returned an empty token.");
+        }
+    }
 
     private (bool Ok, string? Error) Fail(Exception ex)
     {

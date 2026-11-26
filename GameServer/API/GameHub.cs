@@ -16,11 +16,13 @@ class GameHub : Hub
     private readonly IPlayerService _playerService;
     private readonly ConnectionManager _connectionManager;
     private readonly IGameService _gameService;
+    private readonly IRepository<User> _userRepository;
 
     public GameHub(
         ILogger<GameHub> logger, IGameStore store, 
         ITurnService turnService, IPlayerService playerService,
-        IGameService gameService, ConnectionManager connectionManager
+        IGameService gameService, ConnectionManager connectionManager,
+        IRepository<User> userRepository
         )
     {
         _logger = logger;
@@ -29,12 +31,17 @@ class GameHub : Hub
         _playerService = playerService;
         _connectionManager = connectionManager;
         _gameService = gameService;
+        _userRepository = userRepository;
     }
 
     public override async Task OnConnectedAsync()
     {
         var userId = GetUserIdFromContext();
-        _connectionManager.AddConnection(Context.ConnectionId, userId);
+
+        var claim = Context?.User?.Claims.FirstOrDefault(c => c.Type.StartsWith("IsGuest"));
+        string isGuest = claim?.Value ?? "false";
+
+        _connectionManager.AddConnection(Context!.ConnectionId, userId, isGuest);
 
         await base.OnConnectedAsync();
     }
@@ -650,7 +657,10 @@ class GameHub : Hub
             throw new HubException("Player not found in this session.");
         }
 
-        _connectionManager.AddConnection(Context.ConnectionId, userId);
+        var claim = Context?.User?.Claims.FirstOrDefault(c => c.Type.StartsWith("IsGuest"));
+        string isGuest = claim?.Value ?? "false";
+
+        _connectionManager.AddConnection(Context!.ConnectionId, userId, isGuest);
 
         await Groups.AddToGroupAsync(Context.ConnectionId, code);
         await Clients.Group(code).SendAsync("PlayerReconnected", userId);
@@ -693,6 +703,15 @@ class GameHub : Hub
                                 throw new HubException("Session doesn`t exist");
                             }
                         }
+                        if (_connectionManager.IsUserGuest(userId.Value))
+                        {
+                            var guestUser = _userRepository.GetAll().FirstOrDefault(u => u.Id == userId);
+                            if (guestUser != null)
+                            {
+                                _userRepository.Delete(guestUser.Username);
+                            }
+                        }
+                        
                     }
                     catch (TaskCanceledException)
                     {
