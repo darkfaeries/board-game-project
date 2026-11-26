@@ -46,7 +46,7 @@ builder.Services.AddTransient<IRepository<User>, UserRepository>();
 builder.Services.AddSignalR();
 
 builder.Services.AddDbContext<UserDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    DatabaseConfigurator.Configure(options, builder.Configuration));
 
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration));
@@ -101,10 +101,6 @@ if (app.Environment.IsDevelopment())
 app.MapControllers();
 app.MapHub<GameHub>("/gamehub");
 
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<UserDbContext>();
-    dbContext.Database.Migrate(); 
-}
+DatabaseConfigurator.ApplyMigrationsIfPostgres<UserDbContext>(app);
 
 app.Run();
