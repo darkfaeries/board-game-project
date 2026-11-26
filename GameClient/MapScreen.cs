@@ -1279,16 +1279,17 @@ public partial class MapScreen
         string sourceName = _snapshot.Players
             .FirstOrDefault(p => p.Id == trade.SourcePlayerId)?.Name ?? "Игрок";
 
-        _spriteBatch.DrawString(_uiTitleFont, "Предложение обмена", new Vector2(panel.X + 14, panel.Y + 8), new Color(242, 228, 202));
-        _spriteBatch.DrawString(_uiFont, $"От: {sourceName}", new Vector2(panel.X + 14, panel.Y + 42), new Color(240, 196, 112));
-        _spriteBatch.DrawString(_uiFont, $"Отдаёт вам: {FormatResourceDict(trade.Offer)}", new Vector2(panel.X + 14, panel.Y + 72), new Color(180, 232, 168));
-        _spriteBatch.DrawString(_uiFont, $"Просит у вас: {FormatResourceDict(trade.Request)}", new Vector2(panel.X + 14, panel.Y + 102), new Color(238, 182, 148));
+        Rectangle Row(int y, int height = 30) => new(panel.X + 14, panel.Y + y, panel.Width - 28, height);
+        CenteredLabel("Предложение обмена", Row(8, 34), 29);
+        CenteredLabel($"От: {sourceName}", Row(43), 22, new Color(240, 196, 112));
+        CenteredLabel($"Отдаёт вам: {FormatResourceDict(trade.Offer)}", Row(75), 22, new Color(180, 232, 168));
+        CenteredLabel($"Просит у вас: {FormatResourceDict(trade.Request)}", Row(107), 22, new Color(238, 182, 148));
 
         bool canAfford = _snapshot.You is { } me &&
                          trade.Request.All(item => me.Resource(item.Key) >= item.Value);
         if (!canAfford)
         {
-            _spriteBatch.DrawString(_uiFont, "Недостаточно ресурсов для принятия.", new Vector2(panel.X + 14, panel.Y + 132), new Color(232, 140, 120));
+            CenteredLabel("Недостаточно ресурсов для принятия.", Row(140), 22, new Color(232, 140, 120));
         }
 
         int buttonWidth = (panel.Width - 36) / 2;

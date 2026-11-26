@@ -80,15 +80,53 @@ public partial class MapScreen
         }
     }
 
-    private void Label(string text, Rectangle box, int fontSize, bool center = false, Color? color = null)
+    private void Label(string text, Rectangle box, int fontSize)
     {
         if (string.IsNullOrEmpty(text)) return;
         var font = _numberFontSystem.GetFont(fontSize * 1.18f);
         var size = font.MeasureString(text);
         float scale = Math.Min(1, Math.Min(box.Width / size.X, box.Height / size.Y));
-        var pos = new Vector2(box.X + (center ? (box.Width - size.X * scale) / 2 : 0),
+        var pos = new Vector2(box.X,
             box.Y + (box.Height - size.Y * scale) / 2);
-        _spriteBatch.DrawString(font, text, pos, color ?? Ivory, scale: new Vector2(scale));
+        _spriteBatch.DrawString(font, text, pos, Ivory, scale: new Vector2(scale));
+    }
+
+    private void CenteredLabel(string text, Rectangle box, int size, Color? color = null, bool wrap = false)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        var font = _numberFontSystem.GetFont(size * 1.18f);
+        var ink = font.TextBounds(text, Vector2.Zero);
+        float width = ink.X2 - ink.X;
+        string? secondLine = null;
+        Bounds secondInk = default;
+        if (wrap && width > box.Width)
+        {
+            // Split near the middle at a word boundary. Keep unbroken names on one line.
+            int middle = text.Length / 2;
+            int left = text.LastIndexOf(' ', middle);
+            int right = text.IndexOf(' ', middle);
+            int split = left < 0 || (right >= 0 && right - middle < middle - left) ? right : left;
+            if (split > 0 && split < text.Length - 1)
+            {
+                secondLine = text[(split + 1)..].TrimStart();
+                text = text[..split].TrimEnd();
+                ink = font.TextBounds(text, Vector2.Zero);
+                secondInk = font.TextBounds(secondLine, new Vector2(0, font.LineHeight));
+                width = Math.Max(ink.X2 - ink.X, secondInk.X2 - secondInk.X);
+            }
+        }
+
+        float bottom = secondLine == null ? ink.Y2 : secondInk.Y2;
+        float scale = Math.Min(1f, Math.Min(box.Width / Math.Max(1, width), box.Height / Math.Max(1, bottom - ink.Y)));
+        var center = box.Location.ToVector2() + box.Size.ToVector2() * .5f;
+        float y = center.Y - (ink.Y + bottom) * .5f * scale;
+        void DrawLine(string line, Bounds bounds, float top)
+        {
+            var pos = new Vector2(center.X - (bounds.X + bounds.X2) * .5f * scale, top);
+            _spriteBatch.DrawString(font, line, pos, color ?? Ivory, scale: new Vector2(scale));
+        }
+        DrawLine(text, ink, y);
+        if (secondLine != null) DrawLine(secondLine, secondInk, y + font.LineHeight * scale);
     }
 
     private void DrawPaintedButton(Rectangle button, string title, bool enabled, bool highlight,
@@ -106,7 +144,7 @@ public partial class MapScreen
             box.X = button.X + 105;
             box.Width = button.Width - 130;
         }
-        Label(title, box, fontSize, true, amber ? new Color(52, 32, 15) : enabled ? Ivory : Color.Silver);
+        CenteredLabel(title, box, fontSize, amber ? new Color(52, 32, 15) : enabled ? Ivory : Color.Silver);
     }
 
     private static (string Portrait, string Tribe) Identity(PlayerColor color) => color switch
@@ -149,7 +187,7 @@ public partial class MapScreen
         }
         DrawPaintedButton(MenuButton, "Меню", true, MenuButton.Contains(mouse));
         DrawPanel(Sidebar, 36);
-        Label("Ваше племя", new Rectangle(1510, 151, 346, 48), 38, true);
+        CenteredLabel("Ваше племя", new Rectangle(1510, 151, 346, 48), 38);
         if (game.You is { } me) DrawTribe(me, mouse);
         DrawPaintedButton(ExploreButton, CanConfirmMove ? $"Переместить ({_selectedRoute.Count - 1})" : "Исследовать",
             CanBuild, _exploreOpen || ExploreButton.Contains(mouse), "explore", fontSize: 32);
@@ -173,7 +211,7 @@ public partial class MapScreen
             Label(status, new Rectangle(800, 975, 620, 44), 26);
         }
         if (new Rectangle(22, 18, 450, 88).Contains(mouse))
-            Label($"{game.You?.Name} · Код игры {game.GameCode}", new Rectangle(28, 102, 450, 38), 23, true);
+            CenteredLabel($"{game.You?.Name} · Код игры {game.GameCode}", new Rectangle(28, 102, 450, 38), 23);
         if (hoveredPlayer != null) DrawPlayerDetails(hoveredPlayer);
         if (_tradeOpen && game.Phase == TurnPhase.Trade && game.IsMyTurn) DrawTradePanel();
         if (HasPendingDiscards)
@@ -223,7 +261,7 @@ public partial class MapScreen
             Art(icon, new Rectangle(x, 981, 58, 58));
             Label(me.Resource(resource).ToString(), new Rectangle(x + 76, 988, 68, 45), 36);
             if (new Rectangle(x, 978, 140, 66).Contains(mouse))
-                Label(ResourceName(resource), new Rectangle(x - 24, 928, 155, 32), 24, true);
+                CenteredLabel(ResourceName(resource), new Rectangle(x - 24, 928, 155, 32), 24);
         }
     }
 
@@ -232,7 +270,7 @@ public partial class MapScreen
         var bounds = new Rectangle(985, y, 470, 54);
         DrawPanel(bounds);
         bounds.Inflate(-14, -6);
-        Label(text, bounds, 22, true);
+        CenteredLabel(text, bounds, 22);
     }
 
     private void DrawPlayerDetails(PlayerSnapshot player)

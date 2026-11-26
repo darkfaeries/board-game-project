@@ -15,8 +15,10 @@ public partial class MapScreen
     private static Rectangle ModeTab(TradeMode mode) => TradeRect(mode == TradeMode.Player ? 142 : 629, 157, 486, 101);
     private static Rectangle PartnerCard(int index, int count)
     {
-        int width = (1136 - (count - 1) * 12) / count;
-        return TradeRect(59 + index * (width + 12), 319, width, 195);
+        const int gap = 12;
+        int width = Math.Min(562, (1136 - (count - 1) * gap) / count);
+        int start = (1254 - count * width - (count - 1) * gap) / 2;
+        return TradeRect(start + index * (width + gap), 319, width, 195);
     }
 
     private static readonly int[] TradeRowCenters = { 660, 761, 865, 971 };
@@ -123,6 +125,7 @@ public partial class MapScreen
         bool bank = _tradeMode == TradeMode.Bank;
         var mouse = HudMouse;
         Art("barter-panel", TradeRect(0, 0, 1254, 1254));
+        CenteredLabel("Торговля", TradeRect(436, 50, 382, 79), 64);
         foreach (var mode in Enum.GetValues<TradeMode>())
         {
             var tab = ModeTab(mode);
@@ -130,11 +133,11 @@ public partial class MapScreen
                 mode == TradeMode.Player ? "С игроком" : "С банком", 42, !Busy && !HasPendingTrade, mouse);
         }
 
-        Label(bank ? "Обмен с банком" : "С кем обменяться:", TradeRect(348, 261, 565, 55), 30, true);
+        CenteredLabel(bank ? "Обмен с банком" : "С кем обменяться:", TradeRect(400, 261, 454, 55), 30);
         if (bank)
         {
-            Label("Отдайте три разных вида ресурсов", TradeRect(130, 332, 994, 72), 34, true);
-            Label("Выберите один ресурс в колонке «Прошу»", TradeRect(130, 409, 994, 70), 28, true);
+            CenteredLabel("Отдайте три разных вида ресурсов", TradeRect(130, 341, 994, 72), 34);
+            CenteredLabel("Выберите один ресурс в колонке «Прошу»", TradeRect(130, 421, 994, 70), 28);
         }
         else
         {
@@ -142,11 +145,17 @@ public partial class MapScreen
                 DrawTradePartner(partners[i], PartnerCard(i, partners.Length), mouse);
         }
 
+        CenteredLabel("Ресурс", TradeRect(62, 535, 328, 64), 31);
+        CenteredLabel("В наличии", TradeRect(400, 535, 184, 64), 27);
+        CenteredLabel("Отдаю", TradeRect(610, 535, 264, 64), 31, new Color(239, 170, 129));
+        CenteredLabel("Прошу", TradeRect(918, 535, 264, 64), 31, new Color(181, 211, 163));
         for (int row = 0; row < Resources.Length; row++)
         {
-            var resource = Resources[row].Type;
+            var (resource, icon) = Resources[row];
             int cy = TradeRowCenters[row];
-            Label((game.You?.Resource(resource) ?? 0).ToString(), TradeRect(434, cy - 38, 116, 76), 32, true);
+            Art(icon, TradeRect(81, cy - 40, 80, 80));
+            CenteredLabel(ResourceName(resource), TradeRect(172, cy - 38, 202, 76), 33);
+            CenteredLabel((game.You?.Resource(resource) ?? 0).ToString(), TradeRect(434, cy - 38, 116, 76), 32);
             DrawTradeAmount(row, resource, false, target, mouse);
             if (bank)
             {
@@ -167,7 +176,7 @@ public partial class MapScreen
     {
         var amounts = request ? _tradeRequest : _tradeOffer;
         var valueBox = TradeRect(request ? 1003 : 695, TradeRowCenters[row] - 38, 94, 76);
-        Label(amounts.GetValueOrDefault(resource).ToString(), valueBox, 32, true);
+        CenteredLabel(amounts.GetValueOrDefault(resource).ToString(), valueBox, 32);
         for (int delta = -1; delta <= 1; delta += 2)
             DrawTradeControl(delta < 0 ? "barter-minus" : "barter-plus", AmountButton(row, request, delta),
                 "", 0, CanChangeAmount(resource, request, delta, target), mouse);
@@ -180,41 +189,33 @@ public partial class MapScreen
             _spriteBatch.Draw(_pixel, bounds, Color.Wheat * 0.12f);
         if (text.Length == 0) return;
         bounds.Inflate(-bounds.Width / 12, -bounds.Height / 8);
-        Label(text, bounds, size, true, enabled ? Ivory : Color.LightGray);
+        CenteredLabel(text, bounds, size, enabled ? Ivory : Color.LightGray);
     }
 
     private void DrawTradePartner(PlayerSnapshot player, Rectangle bounds, Point mouse)
     {
-        bool blue = player.Color == PlayerColor.Blue;
-        bool green = player.Color == PlayerColor.White;
-        Art(blue ? "barter-blue" : "barter-green", bounds);
-        if (!blue && !green)
+        bool selected = player.Id == _tradeTargetId;
+        _spriteBatch.Draw(_art["backdrop"], bounds, new Rectangle(260, 0, 1350, 465), new Color(145, 138, 130));
+        Art("barter-partner", bounds, selected ? new Color(255, 193, 91) : new Color(152, 150, 145));
+        if (bounds.Contains(mouse)) _spriteBatch.Draw(_pixel, bounds, Color.Wheat * .10f);
+
+        int inset = bounds.Height / 9;
+        Rectangle portrait, name;
+        if (bounds.Width < bounds.Height * 5 / 2)
         {
-            var portrait = new Rectangle(bounds.X + 4, bounds.Y + 7, bounds.Width * 43 / 100, bounds.Height - 14);
-            Art(Identity(player.Color).Portrait, portrait);
+            int side = bounds.Height * 2 / 5;
+            portrait = new Rectangle(bounds.Center.X - side / 2, bounds.Top + inset, side, side);
+            name = new Rectangle(bounds.X + inset, portrait.Bottom + 3,
+                bounds.Width - 2 * inset, bounds.Bottom - inset - portrait.Bottom - 3);
         }
-        var name = new Rectangle(bounds.X + bounds.Width * 43 / 100, bounds.Y + bounds.Height / 7,
-            bounds.Width * 54 / 100, bounds.Height / 3);
-        string caption = player.Name;
-        if (caption.Length > 16)
+        else
         {
-            int middle = caption.Length / 2;
-            int space = caption.LastIndexOf(' ', middle);
-            int split = space > middle / 2 ? space : middle;
-            caption = caption[..split] + "\n" + caption[split..].TrimStart();
-            name.Height = bounds.Height * 2 / 3;
+            int side = bounds.Height - 2 * inset;
+            portrait = new Rectangle(bounds.X + inset, bounds.Y + inset, side, side);
+            name = new Rectangle(portrait.Right + inset, bounds.Y + inset,
+                bounds.Right - portrait.Right - 2 * inset, bounds.Height - 2 * inset);
         }
-        Label(caption, name, 36, true);
-        if (player.Id == _tradeTargetId)
-        {
-            var edge = new Color(244, 181, 85);
-            var r = bounds;
-            r.Inflate(-4, -5);
-            _spriteBatch.Draw(_pixel, new Rectangle(r.X, r.Y, r.Width, 2), edge);
-            _spriteBatch.Draw(_pixel, new Rectangle(r.X, r.Bottom - 2, r.Width, 2), edge);
-            _spriteBatch.Draw(_pixel, new Rectangle(r.X, r.Y, 2, r.Height), edge);
-            _spriteBatch.Draw(_pixel, new Rectangle(r.Right - 2, r.Y, 2, r.Height), edge);
-        }
-        else if (bounds.Contains(mouse)) _spriteBatch.Draw(_pixel, bounds, Color.Wheat * 0.12f);
+        Art(Identity(player.Color).Portrait, portrait);
+        CenteredLabel(player.Name.Trim(), name, 36, wrap: true);
     }
 }
