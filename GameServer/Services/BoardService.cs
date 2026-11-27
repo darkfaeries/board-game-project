@@ -44,6 +44,21 @@ public class BoardService : IBoardService
             {
                 node.HasTribeCounter = playersCount == 3 ? node.CanSettle3p : node.CanSettle;
             }
+
+            var adaptationColors = new BalancedRandom<AdaptationColor>(Enum.GetValues<AdaptationColor>());
+            var desertificationTerrains = new BalancedRandom<TerrainType>(Enum.GetValues<TerrainType>());
+            var counterFactories = new BalancedRandom<Func<ExplorationCounter>>(new Func<ExplorationCounter>[]
+            {
+                () => new EnemyExplorationCounter { Id = Guid.NewGuid() },
+                () => new AdaptationCounter { Id = Guid.NewGuid(), Color = adaptationColors.Next() },
+                () => new DesertificationCounter { Id = Guid.NewGuid(), Terrain = desertificationTerrains.Next() }
+            });
+
+            foreach (var path in board.ExplorationPaths.Values)
+            {
+                if (path.ClothingRequirement > 0 || path.ShelterRequirement > 0)
+                    path.ExplorationCounter = counterFactories.Next()();
+            }
     }
 
     public bool PlaceInitialCamp(GameSession session, Guid playerId, AxialCoords nodeCoords)
