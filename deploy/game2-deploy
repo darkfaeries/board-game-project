@@ -1,0 +1,58 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+[[ $# == 1 && $1 =~ ^sha256:[0-9a-f]{64}$ ]] || exit 64
+[[ $EUID == 0 ]] || exit 77
+exec 9>/run/lock/game2-deploy.lock
+flock -n 9 || { echo 'Another game2 deployment is running.' >&2; exit 75; }
+cd /etc/game2
+image="ghcr.io/darkfaeries/board-game-project/backend@$1"
+compose=(docker compose -p game2 --env-file /etc/game2/.env -f /etc/game2/backend.compose.yaml)
+
+# No network-policy changes, arbitrary repositories, compose uploads, or DB recreation.
+systemctl is-active --quiet game2-network-guard.service
+nft list table inet game2_guard >/dev/null
+for network in game2_frontend game2_private; do
+  network_id=$(docker network inspect "$network" --format '{{.Id}}')
+  bridge="br-${network_id:0:12}"
+  nft list chain inet game2_guard forward | grep -Fq "$bridge" || { echo 'Network guard does not match current game2 bridges.' >&2; exit 77; }
+done
+[[ $(docker inspect game2-db-1 --format '{{.State.Health.Status}}') == healthy ]]
+available_mb=$(df -Pm / | awk 'NR==2 {print $4}')
+[[ $available_mb -ge 1536 ]] || { echo 'Less than 1.5 GiB free disk; ask administrator.' >&2; exit 75; }
+available_ram=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)
+[[ $available_ram -ge 262144 ]] || { echo 'Less than 256 MiB available RAM.' >&2; exit 75; }
+slot_before=$(docker inspect slot-economy-backend-1 --format '{{.Id}} {{.State.StartedAt}}')
+# Receive a short-lived job token on stdin, never as argv or in log output.
+IFS= read -r registry_user
+IFS= read -r registry_token
+[[ $registry_user =~ ^[A-Za-z0-9-]{1,39}$ && -n $registry_token && ${#registry_token} -le 4096 ]] || exit 64
+registry_config=$(mktemp -d /run/game2-ghcr.XXXXXX)
+trap 'rm -rf "$registry_config"' EXIT
+printf '%s\n' "$registry_token" | docker --config "$registry_config" login ghcr.io \
+  --username "$registry_user" --password-stdin >/dev/null 2>&1 || { echo 'GHCR authentication failed.' >&2; exit 1; }
+unset registry_token
+docker --config "$registry_config" pull "$image"
+
+# Keep the current image and config for a manual rollback. Never remove DB data.
+previous_image=$(docker inspect game2-backend-1 --format '{{.Image}}')
+printf '%s\n' "$previous_image" > previous-image
+if [[ -e deployment.env ]]; then cp -p deployment.env previous-deployment.env; fi
+
+# Migrations run at application startup. Take a bounded local backup first.
+mkdir -p backups
+backup="backups/game2-$(date -u +%Y%m%dT%H%M%SZ).dump"
+(ulimit -f 262144; timeout 120 docker exec game2-db-1 pg_dump -U postgres -d game2 -Fc > "$backup")
+[[ -s $backup ]]
+printf 'GAME2_BACKEND_IMAGE=%s\n' "$image" > deployment.env
+export GAME2_BACKEND_IMAGE="$image"
+"${compose[@]}" config --quiet
+if ! "${compose[@]}" up -d --no-deps --pull never --wait --wait-timeout 180 backend; then
+  echo 'Deployment failed. Previous image and DB backup retained; administrator must check migrations before rollback.' >&2
+  exit 1
+fi
+[[ $(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/sessions) == 401 ]]
+[[ $(docker inspect slot-economy-backend-1 --format '{{.Id}} {{.State.StartedAt}}') == "$slot_before" ]]
+[[ $(docker inspect slot-economy-backend-1 --format '{{.State.Health.Status}}') == healthy ]]
+printf 'Deployed %s; existing backend unchanged.\n' "$image"
