@@ -74,10 +74,8 @@ public class FriendService : IFriendService
 	    {
         	throw new FriendException("This friend request has already been answered.");
     	}
-
-       
-
-        request.Status = FriendshipStatus.Accepted;
+   
+		request.Status = FriendshipStatus.Accepted;
         request.RespondedAt = DateTime.UtcNow;
         await _store.UpdateAsync(request);
         _logger.LogInformation($"Friend request {requestId} accepted by {userId}");
@@ -101,9 +99,7 @@ public class FriendService : IFriendService
 	    {
         	throw new FriendException("This friend request has already been answered.");
     	}
-
-       
-
+      
         await _store.DeleteAsync(request);
         _logger.LogInformation($"Friend request {requestId} declined by {userId}");
     }
