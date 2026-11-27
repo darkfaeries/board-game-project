@@ -330,8 +330,9 @@ public class PlayerService : IPlayerService
             throw new KeyNotFoundException($"Player with ID {playerId} not found.");
         }
 
-        var isWinner = state.CalculateVictoryPoints(playerId) >= GameConstants.VictoryPointsToWin;
-        _logger.LogInformation($"Checked win condition for player {playerId}: {isWinner}.");
+        var victoryPoints = session.CalculateVictoryPoints(playerId);
+        var isWinner = victoryPoints >= GameConstants.VictoryPointsToWin;
+        _logger.LogInformation($"Checked win condition for player {playerId}: {isWinner} ({victoryPoints} points).");
         return isWinner;
     }
 
@@ -352,7 +353,7 @@ public class PlayerService : IPlayerService
     {
         int currentLevel = player!.Progress.GetLevel(progressType);
 
-        if (currentLevel >= 5)
+        if (currentLevel >= GameConstants.MaxProgressLevel)
             return false;
 
         int targetLevel = currentLevel + 1;

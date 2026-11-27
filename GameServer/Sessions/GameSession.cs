@@ -134,4 +134,32 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
 
     public Player[] GetPlayers() => gameState.Players.ToArray();
     public GameState GetGameState() => gameState;
+
+    public int CalculateVictoryPoints(Guid playerId)
+    {
+        var player = gameState.GetPlayer(playerId);
+        if (player == null)
+        {
+            logger.LogWarning($"Cannot calculate victory points: player {playerId} was not found in session {Code}.");
+            throw new KeyNotFoundException($"Player with ID {playerId} not found.");
+        }
+
+        var victoryPoints = player.TribesCollected.Count;
+
+        foreach (var progressType in Enum.GetValues<ProgressType>())
+        {
+            if (player.Progress.GetLevel(progressType) == GameConstants.MaxProgressLevel)
+                victoryPoints++;
+        }
+
+        victoryPoints += player.ExplorationCounters.Count(counter => counter is AdaptationCounter);
+
+        if (gameState.Victory.ExplorationCardOwnerId == playerId)
+            victoryPoints += 2;
+
+        if (gameState.Victory.ExpansionCardOwnerId == playerId)
+            victoryPoints += 2;
+
+        return victoryPoints;
+    }
 }

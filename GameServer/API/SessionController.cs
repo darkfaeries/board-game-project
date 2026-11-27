@@ -58,6 +58,24 @@ public class SessionController(IGameStore store) : ControllerBase
         return Ok(player);
     }
 
+    [HttpGet ("{code}/{playerId}/points")]
+    public IActionResult GetPlayerPoints(string code, Guid playerId)
+    {
+        var session = store.GetSession(code);
+        if (session == null)
+        {
+            return NotFound();
+        }
+
+        var player = session.GetGameState().GetPlayer(playerId);
+        if (player == null)
+        {
+            return NotFound();
+        }
+
+        return Ok(session.CalculateVictoryPoints(playerId));
+    }
+
     [HttpGet]
     public IActionResult GetAllSessions()
     {

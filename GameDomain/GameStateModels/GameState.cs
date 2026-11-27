@@ -35,12 +35,6 @@ public class GameState
         return Players.Single(player => player.Id == CurrentPlayerId.Value);
     }
 
-    public int CalculateVictoryPoints(Guid playerId)
-    {
-        // The diagram does not specify the scoring rules.
-        throw new NotImplementedException();
-    }
-
     public Player? GetPlayer(Guid playerId) =>
         Players.FirstOrDefault(player => player.Id == playerId);
 }
