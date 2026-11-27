@@ -14,6 +14,7 @@ public partial class MapScreen
 
     private enum BoardActionMode { None, CreateExplorer, MoveExplorer, ConvertToCamp }
     private enum TradeMode { Player, Bank }
+    private enum TurnButtonAction { Roll, Advance }
 
     private GraphicsDevice _graphicsDevice;
     private Microsoft.Xna.Framework.Content.ContentManager _content;
@@ -53,7 +54,10 @@ public partial class MapScreen
     public event Action? ReturnToMainMenuRequested;
     public bool Busy { get; set; }
 
-    private MouseState _previousMouse;
+    private bool _pointerReady;
+    private bool _pointerWasPressed;
+    private Point? _pointerPressOrigin;
+    private TurnButtonAction? _pressedTurnAction;
     private string? _message;
     private bool _messageIsError;
     private float _messageSeconds;
@@ -74,6 +78,7 @@ public partial class MapScreen
 
     public void Reset()
     {
+        ResetPointerInput();
         _exploreOpen = _tradeOpen = false;
         _snapshot = null;
         _message = null;
@@ -329,7 +334,7 @@ public partial class MapScreen
         }
     }
 
-    public void Update(GameTime gameTime)
+    public void Update(GameTime gameTime, bool windowActive)
     {
         if (_message is not null)
         {
@@ -338,12 +343,44 @@ public partial class MapScreen
                 _message = null;
         }
 
-        var mouse = Mouse.GetState();
-        bool releasedThisFrame = _previousMouse.LeftButton == ButtonState.Pressed &&
-                                 mouse.LeftButton == ButtonState.Released;
+        UpdatePointerInput(windowActive ? HudMouse : null, Mouse.GetState().LeftButton == ButtonState.Pressed);
+    }
 
-        if (releasedThisFrame) HandleClick(HudMouse);
-        _previousMouse = mouse;
+    public void ResetPointerInput()
+    {
+        _pointerReady = false;
+        _pointerWasPressed = false;
+        _pointerPressOrigin = null;
+        _pressedTurnAction = null;
+    }
+
+    private void UpdatePointerInput(Point? point, bool pressed)
+    {
+        if (point is not { } cursor || !DesignArea.Contains(cursor))
+        {
+            ResetPointerInput();
+            return;
+        }
+
+        if (pressed && !_pointerWasPressed)
+        {
+            _pointerPressOrigin = _pointerReady ? cursor : null;
+            _pressedTurnAction = _pointerReady && EndTurnButton.Contains(cursor) ? AvailableTurnAction : null;
+        }
+        else if (!pressed)
+        {
+            // A release after focus or turn changes cannot trigger the newly enabled action.
+            bool click = _pointerPressOrigin is { } origin &&
+                         (EndTurnButton.Contains(cursor)
+                             ? _pressedTurnAction is { } action && action == AvailableTurnAction
+                             : !EndTurnButton.Contains(origin));
+            _pointerPressOrigin = null;
+            _pressedTurnAction = null;
+            _pointerReady = true;
+            if (click) HandleClick(cursor);
+        }
+
+        _pointerWasPressed = pressed;
     }
 
     private void HandleClick(Point point)
@@ -363,8 +400,8 @@ public partial class MapScreen
         }
         if (EndTurnButton.Contains(point))
         {
-            if (CanRoll) RollRequested?.Invoke();
-            else if (CanEndTurn) EndTurnRequested?.Invoke();
+            if (AvailableTurnAction == TurnButtonAction.Roll) RollRequested?.Invoke();
+            else if (AvailableTurnAction == TurnButtonAction.Advance) EndTurnRequested?.Invoke();
             return;
         }
         if (TradeButton.Contains(point) && CanTrade)
@@ -391,6 +428,10 @@ public partial class MapScreen
     private bool CanEndTurn => !IsGameOver && !Busy && _snapshot?.IsMyTurn == true &&
                                _snapshot.Status == GameStatus.Playing && !HasPendingDiscards && !HasPendingTrade &&
                                (_snapshot.Phase != TurnPhase.Roll || _snapshot.RollUsed);
+
+    private TurnButtonAction? AvailableTurnAction =>
+        HasPendingDiscards || HasPendingTrade ? null :
+        CanRoll ? TurnButtonAction.Roll : CanEndTurn ? TurnButtonAction.Advance : null;
 
     private bool CanBuild => !IsGameOver && !Busy && _snapshot?.IsMyTurn == true &&
                              _snapshot.Status == GameStatus.Playing &&
@@ -855,12 +896,14 @@ public partial class MapScreen
     {
         if (_snapshot?.GameCode != snapshot.GameCode)
         {
+            _pointerPressOrigin = null;
             _collectedTribeNodes.Clear();
             _tribeCounterPlayerCount = null;
         }
 
         if (_snapshot?.Phase != snapshot.Phase || _snapshot?.CurrentPlayerId != snapshot.CurrentPlayerId || _snapshot?.Status != snapshot.Status)
         {
+            _pointerPressOrigin = null;
             _exploreOpen = _tradeOpen = false;
             if (_boardActionMode != BoardActionMode.None) _message = null;
             _boardActionMode = BoardActionMode.None;

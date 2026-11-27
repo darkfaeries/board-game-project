@@ -212,6 +212,7 @@ namespace GameClient
             _mapScreen = new MapScreen(GraphicsDevice, Content);
             _mapScreen.Initialize();
             _mapScreen.LoadContent();
+            Deactivated += (_, _) => _mapScreen.ResetPointerInput();
 
             _mapScreen.RollRequested += () => _ = RollAsync();
             _mapScreen.EndTurnRequested += () => _ = EndTurnAsync();
@@ -775,13 +776,15 @@ namespace GameClient
 
             if (_appState == AppState.InGame)
             {
-                _mapScreen.Update(gameTime);
+                _mapScreen.Update(gameTime, IsActive);
 
                 if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
                 {
                     _appState = AppState.MainMenu;
                 }
             }
+            if (_appState == AppState.MainMenu)
+                _mapScreen.ResetPointerInput();
             base.Update(gameTime);
         }
 

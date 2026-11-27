@@ -200,7 +200,7 @@ public partial class MapScreen
         DrawPaintedButton(TradeButton, "Обмен", CanTrade, _tradeOpen || TradeButton.Contains(mouse), "trade", fontSize: 32);
         bool rollPhase = game.Status == GameStatus.Playing && game.Phase == TurnPhase.Roll && !game.RollUsed;
         DrawPaintedButton(EndTurnButton, rollPhase ? "Бросить кубики" : EndTurnLabel,
-            CanRoll || CanEndTurn, EndTurnButton.Contains(mouse), amber: true, fontSize: 30);
+            AvailableTurnAction is not null, EndTurnButton.Contains(mouse), amber: true, fontSize: 30);
 
         if (_exploreOpen && CanBuild)
         {
