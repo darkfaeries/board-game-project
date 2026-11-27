@@ -23,6 +23,8 @@ namespace GameClient
 
     public class Client : Game
     {
+        private const string JoinPrompt = "Создайте игру или введите код комнаты.";
+
         private GraphicsDeviceManager _graphics;
         private Desktop _desktop = null!;
         private AppState _appState = AppState.MainMenu;
@@ -33,7 +35,8 @@ namespace GameClient
         private Label _createLabelShadow = null!;
         private Label _statusLabelMain = null!;
         private Label _statusLabelShadow = null!;
-        private TextBox _codeInput = null!;
+        private SessionCodeInput _codeInput = null!;
+        private string? _createdRoomCode;
         private Button _connectButton = null!;
         private Label _connectLabelMain = null!;
         private Label _connectLabelShadow = null!;
@@ -71,24 +74,24 @@ namespace GameClient
         private bool _gameStarted;
         private int _gameStartEventPending;
 
-        public Client(GameClient? networkClient = null)
+        public Client(GameClient? networkClient = null, bool startWindowed = false, int? windowNumber = null)
         {
             _graphics = new GraphicsDeviceManager(this);
             var displayMode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
-            _graphics.PreferredBackBufferWidth = displayMode.Width;
-            _graphics.PreferredBackBufferHeight = displayMode.Height;
-            _graphics.IsFullScreen = true;
-            _graphics.HardwareModeSwitch = false;
-            _graphics.PreferMultiSampling = true;
-
             // F11/Alt+Enter returns to a usable window instead of opening a
             // 1920x1080 window that may not fit on the current monitor.
             _windowedWidth = Math.Min(1600, displayMode.Width);
             _windowedHeight = Math.Min(900, displayMode.Height);
+            _graphics.PreferredBackBufferWidth = startWindowed ? _windowedWidth : displayMode.Width;
+            _graphics.PreferredBackBufferHeight = startWindowed ? _windowedHeight : displayMode.Height;
+            _graphics.IsFullScreen = !startWindowed;
+            _graphics.HardwareModeSwitch = false;
+            _graphics.PreferMultiSampling = true;
 
             Content.RootDirectory = "Content";
             IsMouseVisible = true;
 
+            Window.Title = windowNumber is int number ? $"Каменный век · Окно {number}" : "Каменный век";
             Window.AllowUserResizing = true;
             Window.ClientSizeChanged += OnClientSizeChanged;
             Window.KeyDown += OnKeyDown;
@@ -188,11 +191,28 @@ namespace GameClient
         protected override void LoadContent()
         {
             MyraEnvironment.Game = this;
+            if (OperatingSystem.IsMacOS())
+            {
+                // Myra implements editing shortcuts using Control. Accept either Mac modifier.
+                MyraEnvironment.DownKeysGetter = down =>
+                {
+                    MyraEnvironment.DefaultDownKeysGetter(down);
+                    down[(int)Keys.LeftControl] |= down[(int)Keys.LeftWindows];
+                    down[(int)Keys.RightControl] |= down[(int)Keys.RightWindows];
+                };
+                MyraEnvironment.MouseInfoGetter = () =>
+                {
+                    var mouse = MyraEnvironment.DefaultMouseInfoGetter();
+                    mouse.Position = WindowPointer.InViewport(GraphicsDevice);
+                    return mouse;
+                };
+            }
             BuildUI();
 
             _mapScreen = new MapScreen(GraphicsDevice, Content);
             _mapScreen.Initialize();
             _mapScreen.LoadContent();
+            Deactivated += (_, _) => _mapScreen.ResetPointerInput();
 
             _mapScreen.RollRequested += () => _ = RollAsync();
             _mapScreen.EndTurnRequested += () => _ = EndTurnAsync();
@@ -215,6 +235,7 @@ namespace GameClient
                 () => _networkClient.SubmitTradeDecisionAsync(sourcePlayerId, tradeId, isAccepted), "Не удалось ответить на обмен");
             _mapScreen.TradeWithBankRequested += (offer, resource) => _ = RunMapActionAsync(
                 () => _networkClient.TradeWithBankAsync(offer, resource), "Не удалось обменять ресурсы");
+            _mapScreen.MenuRequested += () => _appState = AppState.MainMenu;
             _mapScreen.ReturnToMainMenuRequested += () =>
             {
                 _appState = AppState.MainMenu;
@@ -234,9 +255,9 @@ namespace GameClient
                 _pendingTradeNotice = null;
                 while (_pendingTribeCollections.TryDequeue(out _)) { }
                 _mapScreen.Reset();
-                _createLabelMain.Text = _createLabelShadow.Text = "Create";
-                _connectLabelMain.Text = _connectLabelShadow.Text = "Connect";
-                _statusLabelMain.Text = _statusLabelShadow.Text = "Вы не подключены к игре. Создайте новую игру.";
+                _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Подключиться";
+                _statusLabelMain.Text = _statusLabelShadow.Text = JoinPrompt;
                 _statusLabelMain.TextColor = Color.LightCoral;
             };
         }
@@ -375,8 +396,8 @@ namespace GameClient
 
             var statusContainer = new Panel { Width = 750, Height = 100, HorizontalAlignment = HorizontalAlignment.Center };
             statusContainer.Margin = new Thickness(0, 0, 0, 0);
-            _statusLabelShadow = new Label { Text = "Вы не подключены к игре.\nСоздайте новую игру.", TextColor = Color.Black * 0.7f, Wrap = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Font = regularFont, Left = 2, Top = 2 };
-            _statusLabelMain = new Label { Text = "Вы не подключены к игре.\nСоздайте новую игру.", TextColor = Color.LightCoral, Wrap = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Font = regularFont };
+            _statusLabelShadow = new Label { Text = JoinPrompt, TextColor = Color.Black * 0.7f, Wrap = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Font = regularFont, Left = 2, Top = 2 };
+            _statusLabelMain = new Label { Text = JoinPrompt, TextColor = Color.LightCoral, Wrap = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Font = regularFont };
             statusContainer.Widgets.Add(_statusLabelShadow);
             statusContainer.Widgets.Add(_statusLabelMain);
             contentStack.Widgets.Add(statusContainer);
@@ -392,49 +413,49 @@ namespace GameClient
             };
 
             var createTextContainer = new Panel { Margin = new Thickness(0, -10, 0, 0) };
-            _createLabelShadow = new Label { Text = "Create", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
-            _createLabelMain = new Label { Text = "Create", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
+            _createLabelShadow = new Label { Text = "Создать игру", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
+            _createLabelMain = new Label { Text = "Создать игру", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
             createTextContainer.Widgets.Add(_createLabelShadow);
             createTextContainer.Widgets.Add(_createLabelMain);
 
             _createButton = new Button { Content = createTextContainer };
             StyleAssetButton(_createButton, buttonTex, 300, 110);
 
-            _createButton.TouchDown += (s, e) => { _createButton.Left = 4; _createButton.Top = 4; };
-            _createButton.TouchUp += (s, e) => { _createButton.Left = 0; _createButton.Top = 0; };
-            _createButton.TouchLeft += (s, e) => { _createButton.Left = 0; _createButton.Top = 0; };
+            _createButton.TouchDown += (s, e) => { createTextContainer.Left = 4; createTextContainer.Top = 4; };
+            _createButton.TouchUp += (s, e) => { createTextContainer.Left = 0; createTextContainer.Top = 0; };
+            _createButton.TouchLeft += (s, e) => { createTextContainer.Left = 0; createTextContainer.Top = 0; };
 
             _createButton.Click += (s, a) => OnCreateClicked();
             buttonsPanel.Widgets.Add(WrapWithShadow(_createButton, buttonTex, 300, 110));
 
             var connectTextContainer = new Panel { Margin = new Thickness(0, -10, 0, 0) };
-            _connectLabelShadow = new Label { Text = "Connect", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
-            _connectLabelMain = new Label { Text = "Connect", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
+            _connectLabelShadow = new Label { Text = "Подключиться", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
+            _connectLabelMain = new Label { Text = "Подключиться", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
             connectTextContainer.Widgets.Add(_connectLabelShadow);
             connectTextContainer.Widgets.Add(_connectLabelMain);
 
             _connectButton = new Button { Content = connectTextContainer };
             StyleAssetButton(_connectButton, buttonTex, 300, 110);
 
-            _connectButton.TouchDown += (s, e) => { _connectButton.Left = 4; _connectButton.Top = 4; };
-            _connectButton.TouchUp += (s, e) => { _connectButton.Left = 0; _connectButton.Top = 0; };
-            _connectButton.TouchLeft += (s, e) => { _connectButton.Left = 0; _connectButton.Top = 0; };
+            _connectButton.TouchDown += (s, e) => { connectTextContainer.Left = 4; connectTextContainer.Top = 4; };
+            _connectButton.TouchUp += (s, e) => { connectTextContainer.Left = 0; connectTextContainer.Top = 0; };
+            _connectButton.TouchLeft += (s, e) => { connectTextContainer.Left = 0; connectTextContainer.Top = 0; };
 
             _connectButton.Click += (s, a) => OnConnectClicked();
             buttonsPanel.Widgets.Add(WrapWithShadow(_connectButton, buttonTex, 300, 110));
 
             var exitTextContainer = new Panel { Margin = new Thickness(0, -10, 0, 0) };
-            var exitLabelShadow = new Label { Text = "Exit", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
-            var exitLabelMain = new Label { Text = "Exit", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
+            var exitLabelShadow = new Label { Text = "Выйти", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
+            var exitLabelMain = new Label { Text = "Выйти", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
             exitTextContainer.Widgets.Add(exitLabelShadow);
             exitTextContainer.Widgets.Add(exitLabelMain);
 
             var exitButton = new Button { Content = exitTextContainer };
             StyleAssetButton(exitButton, buttonTex, 300, 110);
 
-            exitButton.TouchDown += (s, e) => { exitButton.Left = 4; exitButton.Top = 4; };
-            exitButton.TouchUp += (s, e) => { exitButton.Left = 0; exitButton.Top = 0; };
-            exitButton.TouchLeft += (s, e) => { exitButton.Left = 0; exitButton.Top = 0; };
+            exitButton.TouchDown += (s, e) => { exitTextContainer.Left = 4; exitTextContainer.Top = 4; };
+            exitButton.TouchUp += (s, e) => { exitTextContainer.Left = 0; exitTextContainer.Top = 0; };
+            exitButton.TouchLeft += (s, e) => { exitTextContainer.Left = 0; exitTextContainer.Top = 0; };
 
             exitButton.Click += (s, a) => Exit();
             buttonsPanel.Widgets.Add(WrapWithShadow(exitButton, buttonTex, 300, 110));
@@ -447,6 +468,23 @@ namespace GameClient
             rootPanel.Widgets.Add(mainCardContainer);
 
             _desktop = new Desktop { Root = rootPanel };
+            _desktop.FocusedKeyboardWidget = _codeInput;
+            _desktop.KeyDown += (_, e) =>
+            {
+                bool shortcut = _desktop.IsKeyDown(Keys.LeftControl) || _desktop.IsKeyDown(Keys.RightControl);
+                bool alt = _desktop.IsKeyDown(Keys.LeftAlt) || _desktop.IsKeyDown(Keys.RightAlt);
+                if (alt) return;
+
+                if (e.Data == Keys.C && shortcut && !_codeInput.IsKeyboardFocused)
+                {
+                    string? code = _isConnected ? _networkClient.GameCode : _codeInput.Text;
+                    if (!string.IsNullOrEmpty(code)) SessionClipboard.TryCopy(code);
+                }
+
+                if (e.Data == Keys.Enter && !shortcut && _codeInput.IsKeyboardFocused && !_isConnected &&
+                    _codeInput.Text.Length == SessionCodeInput.CodeLength && _connectButton.Enabled)
+                    OnConnectClicked();
+            };
         }
 
         private Texture2D CreateVignetteTexture(int width, int height, float maxAlpha)
@@ -495,7 +533,7 @@ namespace GameClient
             var shadow = new Image { Renderable = new TextureRegion(inputTex), Color = Color.Black * 0.55f, Left = 6, Top = 6, Width = width, Height = height };
             var background = new Image { Renderable = new TextureRegion(inputTex), Width = width, Height = height };
 
-            _codeInput = new TextBox
+            _codeInput = new SessionCodeInput
             {
                 Text = "",
                 Width = width,
@@ -504,25 +542,6 @@ namespace GameClient
                 TextColor = Color.White,
                 Background = null,
                 Padding = new Thickness(75, 16)
-            };
-
-            _codeInput.TextChanged += (s, e) =>
-            {
-                string filteredText = new string(_codeInput.Text
-                    .Where(character => char.IsAsciiHexDigit(character))
-                    .Select(char.ToUpperInvariant)
-                    .ToArray());
-
-                if (filteredText.Length > 6)
-                {
-                    filteredText = filteredText.Substring(0, 6);
-                }
-
-                if (_codeInput.Text != filteredText)
-                {
-                    _codeInput.Text = filteredText;
-                    _codeInput.CursorPosition = filteredText.Length;
-                }
             };
 
             container.Widgets.Add(shadow);
@@ -630,22 +649,24 @@ namespace GameClient
         {
             if (_isConnected)
             {
-                if (!_gameStarted)
+                if (_gameStarted)
                 {
-                    _createButton.Enabled = false;
-                    var start = await _networkClient.StartGameAsync();
-                    _createButton.Enabled = true;
+                    _appState = AppState.InGame;
+                    return;
+                }
+                _createButton.Enabled = false;
+                var start = await _networkClient.StartGameAsync();
+                _createButton.Enabled = true;
 
-                    if (!start.Ok)
-                    {
-                        _statusLabelMain.Text = _statusLabelShadow.Text = start.Error ?? "Не удалось начать игру";
-                        _statusLabelMain.TextColor = Color.LightCoral;
-                    }
+                if (!start.Ok)
+                {
+                    _statusLabelMain.Text = _statusLabelShadow.Text = start.Error ?? "Не удалось начать игру";
+                    _statusLabelMain.TextColor = Color.LightCoral;
                 }
                 return;
             }
 
-            _createLabelMain.Text = _createLabelShadow.Text = "Creating...";
+            _createLabelMain.Text = _createLabelShadow.Text = "Создаём игру…";
             _createButton.Enabled = false;
             _connectButton.Enabled = false;
 
@@ -654,7 +675,7 @@ namespace GameClient
             {
                 _statusLabelMain.Text = _statusLabelShadow.Text = auth.Error ?? "Ошибка авторизации";
                 _statusLabelMain.TextColor = Color.LightCoral;
-                _createLabelMain.Text = _createLabelShadow.Text = "Create";
+                _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
                 _createButton.Enabled = true;
                 _connectButton.Enabled = true;
                 return;
@@ -665,7 +686,7 @@ namespace GameClient
             if (result.IsSuccess)
             {
                 string code = result.Data ?? string.Empty;
-                _codeInput.Text = code;
+                Interlocked.Exchange(ref _createdRoomCode, code);
                 await ConnectToSessionAsync(code);
             }
             else
@@ -675,7 +696,7 @@ namespace GameClient
             }
 
             if (!_isConnected)
-                _createLabelMain.Text = _createLabelShadow.Text = "Create";
+                _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
 
             _createButton.Enabled = true;
             _connectButton.Enabled = true;
@@ -685,7 +706,7 @@ namespace GameClient
         {
             if (_isConnected)
             {
-                _connectLabelMain.Text = _connectLabelShadow.Text = "Disconnecting...";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Отключаемся…";
                 _connectButton.Enabled = false;
                 await Disconnect();
                 _connectButton.Enabled = true;
@@ -700,7 +721,7 @@ namespace GameClient
 
         private async Task ConnectToSessionAsync(string gameCode)
         {
-            _connectLabelMain.Text = _connectLabelShadow.Text = "Connecting...";
+            _connectLabelMain.Text = _connectLabelShadow.Text = "Подключаемся…";
             _connectButton.Enabled = false;
 
             var result = await _networkClient.ConnectAsync(gameCode, _playerName);
@@ -711,15 +732,15 @@ namespace GameClient
                 _snapshotDirty = true;
                 _statusLabelMain.Text = _statusLabelShadow.Text = $"Успешно подключено к игре: {gameCode}!";
                 _statusLabelMain.TextColor = Color.LightGreen;
-                _createLabelMain.Text = _createLabelShadow.Text = "Start Game";
-                _connectLabelMain.Text = _connectLabelShadow.Text = "Disconnect";
+                _createLabelMain.Text = _createLabelShadow.Text = "Начать игру";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Отключиться";
             }
             else
             {
-                _statusLabelMain.Text = _statusLabelShadow.Text = result.Error ?? "Ошибка сети";
+                _statusLabelMain.Text = _statusLabelShadow.Text = result.Error ?? "Не удалось подключиться к игре";
                 _statusLabelMain.TextColor = Color.LightCoral;
-                _createLabelMain.Text = _createLabelShadow.Text = "Create";
-                _connectLabelMain.Text = _connectLabelShadow.Text = "Connect";
+                _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Подключиться";
             }
 
             _connectButton.Enabled = true;
@@ -729,19 +750,25 @@ namespace GameClient
         {
             await _networkClient.DisconnectAsync();
             _isConnected = false;
+            _gameStarted = false;
+            _mapScreen.Reset();
             _pendingSnapshot = null;
             _snapshotDirty = false;
-            _statusLabelMain.Text = _statusLabelShadow.Text = "Вы не подключены к игре. Создайте новую игру.";
+            _statusLabelMain.Text = _statusLabelShadow.Text = JoinPrompt;
             _statusLabelMain.TextColor = Color.LightCoral;
-            _createLabelMain.Text = _createLabelShadow.Text = "Create";
-            _connectLabelMain.Text = _connectLabelShadow.Text = "Connect";
+            _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
+            _connectLabelMain.Text = _connectLabelShadow.Text = "Подключиться";
         }
 
         protected override void Update(GameTime gameTime)
         {
+            if (Interlocked.Exchange(ref _createdRoomCode, null) is { } code)
+                _codeInput.SetRoomCode(code);
+
             if (System.Threading.Interlocked.Exchange(ref _gameStartEventPending, 0) == 1)
             {
                 _gameStarted = true;
+                _createLabelMain.Text = _createLabelShadow.Text = "Продолжить";
                 _appState = AppState.InGame;
             }
 
@@ -749,13 +776,15 @@ namespace GameClient
 
             if (_appState == AppState.InGame)
             {
-                _mapScreen.Update(gameTime);
+                _mapScreen.Update(gameTime, IsActive);
 
                 if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
                 {
                     _appState = AppState.MainMenu;
                 }
             }
+            if (_appState == AppState.MainMenu)
+                _mapScreen.ResetPointerInput();
             base.Update(gameTime);
         }
 
@@ -766,7 +795,7 @@ namespace GameClient
                 _mapScreen.MarkTribeCollected(nodeCoords);
 
             if (System.Threading.Interlocked.Exchange(ref _pendingTradeNotice, null) is { } tradeNotice)
-                _mapScreen.ShowMessage(tradeNotice);
+                _mapScreen.ShowMessage(tradeNotice, isError: false);
 
             if (_pendingSnapshot is { } snapshot)
             {

@@ -3,24 +3,40 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-var builder = Host.CreateApplicationBuilder(args);
+const string windowedArg = "--windowed";
+const string windowNumberArg = "--player-window=";
+bool windowed = args.Contains(windowedArg, StringComparer.Ordinal);
+var playerWindow = args.FirstOrDefault(arg => arg.StartsWith(windowNumberArg, StringComparison.Ordinal));
+int? windowNumber = null;
+if (playerWindow is not null && int.TryParse(playerWindow.AsSpan(windowNumberArg.Length), out int number) &&
+    number is >= 1 and <= 4)
+    windowNumber = number;
 
-builder.Services.AddSingleton(services =>
+var hostArgs = args.Where(arg => arg != windowedArg &&
+    !arg.StartsWith(windowNumberArg, StringComparison.Ordinal)).ToArray();
+var builder = Host.CreateApplicationBuilder(hostArgs);
+if (windowNumber.HasValue)
 {
-    var logger = services.GetRequiredService<ILogger<GameClient.GameClient>>();
+    // The development account is shared. Local multiplayer needs a separate guest per window.
+    builder.Configuration["AutoLoginDev"] = "false";
+}
 
-    return new GameClient.GameClient(
-        "http://localhost:5285",
-        logger);
-});
-
+builder.Services.AddSingleton(services => new GameClient.GameClient(
+    "http://localhost:5285", services.GetRequiredService<ILogger<GameClient.GameClient>>()));
 builder.Services.AddHostedService<DevAuthWorker>();
 
-using var host = builder.Build();
+var host = builder.Build();
+await using var hostLifetime = (IAsyncDisposable)host;
 
-await host.StartAsync();
-
-using var game = new GameClient.Client(host.Services.GetRequiredService<GameClient.GameClient>());
-game.Run();
-
-await host.StopAsync();
+try
+{
+    // SDL expects the game window to be created on the main thread on macOS.
+    host.Start();
+    using var game = new GameClient.Client(
+        host.Services.GetRequiredService<GameClient.GameClient>(), windowed, windowNumber);
+    game.Run();
+}
+finally
+{
+    await host.StopAsync();
+}
