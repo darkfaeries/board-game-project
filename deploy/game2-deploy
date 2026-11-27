@@ -13,10 +13,11 @@ compose=(docker compose -p game2 --env-file /etc/game2/.env -f /etc/game2/backen
 # No network-policy changes, arbitrary repositories, compose uploads, or DB recreation.
 systemctl is-active --quiet game2-network-guard.service
 nft list table inet game2_guard >/dev/null
+forward_rules=$(nft list chain inet game2_guard forward)
 for network in game2_frontend game2_private; do
   network_id=$(docker network inspect "$network" --format '{{.Id}}')
   bridge="br-${network_id:0:12}"
-  nft list chain inet game2_guard forward | grep -Fq "$bridge" || { echo 'Network guard does not match current game2 bridges.' >&2; exit 77; }
+  grep -Fq -- "$bridge" <<< "$forward_rules" || { echo 'Network guard does not match current game2 bridges.' >&2; exit 77; }
 done
 [[ $(docker inspect game2-db-1 --format '{{.State.Health.Status}}') == healthy ]]
 available_mb=$(df -Pm / | awk 'NR==2 {print $4}')
