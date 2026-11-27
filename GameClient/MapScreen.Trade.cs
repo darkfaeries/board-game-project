@@ -168,7 +168,7 @@ public partial class MapScreen
 
         string action = bank ? "Обменять" : "Предложить обмен";
         if (game.PendingTrade is { } waiting)
-            action = $"Ждём ответа от {partners.FirstOrDefault(p => p.Id == waiting.TargetPlayerId)?.Name ?? "игрока"}";
+            action = $"Ждём ответа от {partners.FirstOrDefault(p => p.Id == waiting.TargetPlayerId)?.DisplayName ?? "игрока"}";
         DrawTradeControl("barter-submit", SubmitButton, action, 49, CanSubmitOffer(target), mouse);
     }
 
@@ -216,6 +216,6 @@ public partial class MapScreen
                 bounds.Right - portrait.Right - 2 * inset, bounds.Height - 2 * inset);
         }
         Art(Identity(player.Color).Portrait, portrait);
-        CenteredLabel(player.Name.Trim(), name, 36, wrap: true);
+        CenteredLabel(player.DisplayName.Trim(), name, 36, wrap: true);
     }
 }

@@ -33,8 +33,6 @@ public partial class MapScreen
 
     // Живое состояние партии (кампы и исследователи игроков) и ресурсы для его отрисовки.
     private GameSnapshot? _snapshot;
-    private SpriteFontBase _uiTitleFont = null!;
-    private SpriteFontBase _uiFont = null!;
     private Texture2D _pixel = null!;
     private Texture2D _circle = null!;
     private Texture2D _ring = null!;
@@ -57,6 +55,7 @@ public partial class MapScreen
 
     private MouseState _previousMouse;
     private string? _message;
+    private bool _messageIsError;
     private float _messageSeconds;
     private BoardActionMode _boardActionMode;
     private AxialCoords? _selectedExplorer;
@@ -148,8 +147,6 @@ public partial class MapScreen
         _numberFontSystem = new FontSystem();
         _numberFontSystem.AddFont(File.ReadAllBytes(System.IO.Path.Combine(ArtDirectory, "Alegreya-Bold.ttf")));
         _numberFont = _numberFontSystem.GetFont(64);
-        _uiTitleFont = _numberFontSystem.GetFont(30);
-        _uiFont = _numberFontSystem.GetFont(24);
 
         _pixel = new Texture2D(_graphicsDevice, 1, 1);
         _pixel.SetData(new[] { Color.White });
@@ -361,7 +358,7 @@ public partial class MapScreen
         if (HasIncomingTradeForMe) { HandleIncomingTradeClick(point); return; }
         if (HasPendingDiscards)
         {
-            if (HasPendingDiscard && DiscardPanelBounds.Contains(point)) HandleDiscardClick(point);
+            if (HasPendingDiscard) HandleDiscardClick(point);
             return;
         }
         if (EndTurnButton.Contains(point))
@@ -409,65 +406,6 @@ public partial class MapScreen
                                           trade.TargetPlayerId == myId;
     private bool HasPendingDiscard => _snapshot?.You?.DiscardResourcesRequired is > 0;
     private bool HasPendingDiscards => _snapshot?.Players.Any(player => player.DiscardResourcesRequired is > 0) == true;
-    private bool CanSubmitDiscard => !IsGameOver && HasPendingDiscard && !Busy &&
-        _snapshot?.You?.DiscardResourcesRequired == _discardSelection.Values.Sum();
-
-    private static readonly Rectangle DiscardPanelBounds = new(440, 325, 640, 262);
-
-    private Rectangle DiscardRowBounds(int index)
-    {
-        var panel = DiscardPanelBounds;
-        return new Rectangle(panel.X + 12, panel.Y + 64 + index * 38, panel.Width - 24, 32);
-    }
-
-    private bool HandleDiscardClick(Point point)
-    {
-        if (!HasPendingDiscard || _snapshot?.You is not { } player) return true;
-
-        for (int i = 0; i < Enum.GetValues<ResourceType>().Length; i++)
-        {
-            var resource = Enum.GetValues<ResourceType>()[i];
-            var row = DiscardRowBounds(i);
-            int controlX = row.Right - 212;
-            var minusTen = new Rectangle(controlX, row.Y, 42, row.Height);
-            var minusOne = new Rectangle(controlX + 46, row.Y, 38, row.Height);
-            var plusOne = new Rectangle(controlX + 88, row.Y, 38, row.Height);
-            var plusTen = new Rectangle(controlX + 130, row.Y, 42, row.Height);
-            _discardSelection.TryGetValue(resource, out int amount);
-
-            if (minusTen.Contains(point))
-                SetDiscardAmount(resource, Math.Max(0, amount - 10));
-            else if (minusOne.Contains(point))
-                SetDiscardAmount(resource, Math.Max(0, amount - 1));
-            else if (plusOne.Contains(point))
-                SetDiscardAmount(resource, Math.Min(player.Resource(resource), amount + 1));
-            else if (plusTen.Contains(point))
-                SetDiscardAmount(resource, Math.Min(player.Resource(resource), amount + 10));
-            else
-                continue;
-
-            return true;
-        }
-
-        var panel = DiscardPanelBounds;
-        var submit = new Rectangle(panel.X + 12, panel.Bottom - 42, panel.Width - 24, 32);
-        if (submit.Contains(point) && CanSubmitDiscard)
-        {
-            DiscardResourcesRequested?.Invoke(new Dictionary<ResourceType, int>(
-                _discardSelection.Where(item => item.Value > 0)));
-            _discardSelection.Clear();
-        }
-        return true;
-    }
-
-    private void SetDiscardAmount(ResourceType resource, int amount)
-    {
-        if (amount <= 0) _discardSelection.Remove(resource);
-        else _discardSelection[resource] = amount;
-    }
-
-    private static readonly Rectangle IncomingTradePanelBounds = new(500, 345, 550, 232);
-
     private static Rectangle ProgressButtonBounds(int index) => new(1510, 414 + index * 44, 344, 44);
 
     private bool HandleProgressClick(Point point)
@@ -561,14 +499,15 @@ public partial class MapScreen
         _boardActionMode = _boardActionMode == mode ? BoardActionMode.None : mode;
         _selectedExplorer = null;
         _selectedRoute.Clear();
-        _message = _boardActionMode switch
+        var instruction = _boardActionMode switch
         {
             BoardActionMode.CreateExplorer => "Нажмите на свободный узел рядом с вашим лагерем.",
             BoardActionMode.MoveExplorer => "Выберите своего исследователя, затем соседний узел.",
             BoardActionMode.ConvertToCamp => "Нажмите на своего исследователя у племени.",
             _ => null,
         };
-        _messageSeconds = 8f;
+        if (instruction is null) _message = null;
+        else ShowMessage(instruction, isError: false);
     }
 
     private void HandleBoardNodeClick(Point screenPoint)
@@ -613,7 +552,7 @@ public partial class MapScreen
                     _selectedExplorer = coords;
                     _selectedRoute.Clear();
                     _selectedRoute.Add(coords);
-                    ShowMessage("Выберите соседние свободные узлы по маршруту, затем снова нажмите «Переместить».");
+                    ShowMessage("Выберите соседние свободные узлы по маршруту, затем снова нажмите «Переместить».", isError: false);
                     return;
                 }
 
@@ -630,7 +569,7 @@ public partial class MapScreen
                 else
                 {
                     _selectedRoute.Add(coords);
-                    ShowMessage($"Маршрут: {_selectedRoute.Count - 1} шаг(а). Нажмите «Переместить», чтобы выполнить.");
+                    ShowMessage($"Шагов в маршруте: {_selectedRoute.Count - 1}. Нажмите «Переместить».", isError: false);
                 }
                 break;
         }
@@ -810,35 +749,6 @@ public partial class MapScreen
     private static bool HasResources(PlayerSnapshot player, params (ResourceType Resource, int Amount)[] cost) =>
         cost.All(item => player.Resource(item.Resource) >= item.Amount);
 
-    private bool HandleIncomingTradeClick(Point point)
-    {
-        if (_snapshot?.PendingTrade is not { } trade) return false;
-
-        var panel = IncomingTradePanelBounds;
-        if (!panel.Contains(point)) return false;
-
-        int buttonWidth = (panel.Width - 36) / 2;
-        var acceptButton = new Rectangle(panel.X + 12, panel.Bottom - 46, buttonWidth, 34);
-        var declineButton = new Rectangle(acceptButton.Right + 12, panel.Bottom - 46, buttonWidth, 34);
-
-        if (acceptButton.Contains(point))
-        {
-            if (_snapshot.You is { } me &&
-                !trade.Request.All(item => me.Resource(item.Key) >= item.Value))
-            {
-                ShowMessage("Недостаточно ресурсов для принятия обмена.");
-                return true;
-            }
-            TradeDecisionRequested?.Invoke(trade.SourcePlayerId, trade.TradeId, true);
-        }
-        else if (declineButton.Contains(point))
-        {
-            TradeDecisionRequested?.Invoke(trade.SourcePlayerId, trade.TradeId, false);
-        }
-
-        return true;
-    }
-
     private static void AdjustTradeAmount(Dictionary<ResourceType, int> dict, ResourceType resource, int delta, int max)
     {
         dict.TryGetValue(resource, out int current);
@@ -1015,9 +925,10 @@ public partial class MapScreen
         oldBoardMesh?.Dispose();
     }
 
-    public void ShowMessage(string message)
+    public void ShowMessage(string message, bool isError = true)
     {
         _message = message;
+        _messageIsError = isError;
         _messageSeconds = 8f;
     }
 
@@ -1117,51 +1028,42 @@ public partial class MapScreen
             layerDepth: 0f);
     }
 
-    private static readonly Rectangle VictoryPanel = new(660, 420, 600, 240);
-    private static Rectangle VictoryMainMenuButtonBounds => new(VictoryPanel.X + 32, VictoryPanel.Bottom - 64, VictoryPanel.Width - 64, 46);
+    private static readonly Rectangle VictoryPanel = new(600, 375, 720, 330);
+    private static readonly Rectangle VictoryMainMenuButtonBounds = new(777, 601, 366, 60);
 
     private void DrawVictoryOverlay()
     {
         _spriteBatch.Draw(_pixel, DesignArea, Color.Black * 0.68f);
         var panel = VictoryPanel;
-        DrawPanel(panel);
-        string winner = _snapshot?.Players.FirstOrDefault(p => p.Id == _snapshot.WinnerPlayerId)?.Name ?? "Неизвестный игрок";
-        DrawCenteredText("Игра окончена", _uiTitleFont, panel, panel.Y + 36, Ivory);
-        DrawCenteredText($"Победитель: {winner}", _uiFont, panel, panel.Y + 102, Ivory);
-        DrawButton(VictoryMainMenuButtonBounds, "В главное меню", true, VictoryMainMenuButtonBounds.Contains(HudMouse));
-    }
-
-    private void DrawCenteredText(string text, SpriteFontBase font, Rectangle panel, int y, Color color)
-    {
-        Vector2 size = font.MeasureString(text);
-        _spriteBatch.DrawString(
-            font,
-            text,
-            new Vector2(panel.X + (panel.Width - size.X) / 2f, y),
-            color);
+        Art("action-dialog-frame", panel);
+        string winner = _snapshot?.Players.FirstOrDefault(p => p.Id == _snapshot.WinnerPlayerId)?.DisplayName ?? "Неизвестный игрок";
+        CenteredLabel("Игра окончена", new Rectangle(panel.X + 58, 415, panel.Width - 116, 55), 44);
+        CenteredLabel("Победитель", new Rectangle(panel.X + 58, 481, panel.Width - 116, 30), 24,
+            new Color(240, 196, 112));
+        CenteredLabel(winner, new Rectangle(panel.X + 68, 514, panel.Width - 136, 68), 33, wrap: true);
+        DrawTradeControl("barter-gold", VictoryMainMenuButtonBounds, "В главное меню", 31, true, HudMouse);
     }
 
     private void DrawMessage()
     {
         if (_message is null) return;
 
-        const int panelWidth = 380;
-        var lines = WrapText(_message, panelWidth - 32f);
-        const int lineHeight = 26;
-        var panel = new Rectangle(
-            800, Math.Min(956, 1060 - 14 - lines.Count * lineHeight),
-            panelWidth,
-            14 + lines.Count * lineHeight);
-        DrawPanel(panel);
+        const int panelWidth = 478;
+        const int inset = 36;
+        const int fontSize = 24;
+        const int lineHeight = 31;
+        const int padding = 17;
+        var lines = WrapText(_message, panelWidth - 2 * inset, _numberFontSystem.GetFont(fontSize * 1.18f));
+        int height = 2 * padding + lines.Count * lineHeight;
+        var panel = new Rectangle(793, 1060 - height, panelWidth, height);
+        Art("action-dialog-frame", panel);
 
-        float y = panel.Y + 7;
+        var color = _messageIsError ? new Color(244, 157, 138) : Ivory;
+        int y = panel.Y + padding;
         foreach (var line in lines)
         {
-            _spriteBatch.DrawString(
-                _uiFont,
-                line,
-                new Vector2(panel.X + 16, y),
-                new Color(232, 140, 120));
+            CenteredLabel(line, new Rectangle(panel.X + inset, y, panelWidth - 2 * inset, lineHeight),
+                fontSize, color);
             y += lineHeight;
         }
     }
@@ -1170,17 +1072,17 @@ public partial class MapScreen
     {
         var you = _snapshot?.You;
         var bounds = new Rectangle(788, 950, 660, 110);
-        DrawPanel(bounds);
-
+        Art("dock", bounds);
         var text = CanPlaceInitialCamp
-            ? $"Расстановка лагерей\nВыберите стартовый узел: {you?.Camps.Count ?? 0}/3 поставлено."
-            : $"Расстановка лагерей\nОжидайте ход игрока { _snapshot?.CurrentPlayer?.Name ?? "…" }.";
-        var lines = text.Split('\n');
-        _spriteBatch.DrawString(_uiTitleFont, lines[0], new Vector2(bounds.X + 12, bounds.Y + 8), new Color(242, 228, 202));
-        _spriteBatch.DrawString(_uiFont, lines[1], new Vector2(bounds.X + 12, bounds.Y + 48), new Color(206, 194, 172));
+            ? $"Выберите стартовый узел · Лагеря {you?.Camps.Count ?? 0}/3"
+            : $"Ожидайте ход игрока {_snapshot?.CurrentPlayer?.DisplayName ?? "…"}";
+        const int inset = 80;
+        int textWidth = bounds.Width - 2 * inset;
+        CenteredLabel("Расстановка лагерей", new Rectangle(bounds.X + inset, bounds.Y + 22, textWidth, 34), 30);
+        CenteredLabel(text, new Rectangle(bounds.X + inset, bounds.Y + 57, textWidth, 30), 22, new Color(221, 207, 180));
     }
 
-    private List<string> WrapText(string text, float maxWidth)
+    private static List<string> WrapText(string text, float maxWidth, SpriteFontBase font)
     {
         var lines = new List<string>();
         var current = string.Empty;
@@ -1188,7 +1090,7 @@ public partial class MapScreen
         foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
             string candidate = current.Length == 0 ? word : current + " " + word;
-            if (current.Length > 0 && _uiFont.MeasureString(candidate).X > maxWidth)
+            if (current.Length > 0 && font.MeasureString(candidate).X > maxWidth)
             {
                 lines.Add(current);
                 current = word;
@@ -1205,100 +1107,6 @@ public partial class MapScreen
         return lines;
     }
 
-    private void DrawDiscardPanel()
-    {
-        if (_snapshot?.You is not { } player || player.DiscardResourcesRequired is not int required)
-            return;
-
-        var panel = DiscardPanelBounds;
-        DrawPanel(panel);
-        _spriteBatch.DrawString(
-            _uiTitleFont,
-            $"Сброс ресурсов · осталось выбрать {required}",
-            new Vector2(panel.X + 12, panel.Y + 6),
-            new Color(242, 228, 202));
-
-        int selected = _discardSelection.Values.Sum();
-        string instruction = $"Выбрано {selected}/{required}";
-        _spriteBatch.DrawString(_uiFont, instruction, new Vector2(panel.X + 12, panel.Y + 36), new Color(206, 194, 172));
-
-        var mouse = HudMouse;
-        ResourceType[] resources = Enum.GetValues<ResourceType>();
-        for (int i = 0; i < resources.Length; i++)
-        {
-            var resource = resources[i];
-            var row = DiscardRowBounds(i);
-            _discardSelection.TryGetValue(resource, out int amount);
-            int controlX = row.Right - 212;
-            string label = $"{ResourceName(resource)}: {amount}/{player.Resource(resource)}";
-            _spriteBatch.DrawString(_uiFont, label, new Vector2(row.X + 4, row.Y + 4), new Color(238, 228, 208));
-            bool canEdit = !Busy;
-            DrawButton(new Rectangle(controlX, row.Y, 42, row.Height), "−10", canEdit && amount > 0, new Rectangle(controlX, row.Y, 42, row.Height).Contains(mouse));
-            DrawButton(new Rectangle(controlX + 46, row.Y, 38, row.Height), "−", canEdit && amount > 0, new Rectangle(controlX + 46, row.Y, 38, row.Height).Contains(mouse));
-            DrawButton(new Rectangle(controlX + 88, row.Y, 38, row.Height), "+", canEdit && amount < player.Resource(resource), new Rectangle(controlX + 88, row.Y, 38, row.Height).Contains(mouse));
-            DrawButton(new Rectangle(controlX + 130, row.Y, 42, row.Height), "+10", canEdit && amount < player.Resource(resource), new Rectangle(controlX + 130, row.Y, 42, row.Height).Contains(mouse));
-        }
-
-        var submit = new Rectangle(panel.X + 12, panel.Bottom - 42, panel.Width - 24, 32);
-        DrawButton(submit, "Сбросить выбранное", CanSubmitDiscard, submit.Contains(mouse));
-    }
-
-    private void DrawPendingWaitPanel()
-    {
-        if (_snapshot is null) return;
-
-        var panel = DiscardPanelBounds;
-        DrawPanel(panel);
-        _spriteBatch.DrawString(
-            _uiTitleFont,
-            "Ожидание сброса ресурсов",
-            new Vector2(panel.X + 12, panel.Y + 8),
-            new Color(242, 228, 202));
-
-        var pendingPlayers = _snapshot.Players
-            .Where(player => player.DiscardResourcesRequired is > 0)
-            .Select(player => $"{player.Name}: сбросить {player.DiscardResourcesRequired}")
-            .ToArray();
-        string message = string.Join(" · ", pendingPlayers);
-        _spriteBatch.DrawString(_uiFont, message, new Vector2(panel.X + 12, panel.Y + 48), new Color(206, 194, 172));
-        _spriteBatch.DrawString(
-            _uiFont,
-            "Ожидайте, пока игроки с более чем 7 картами сбросят половину ресурсов.",
-            new Vector2(panel.X + 12, panel.Y + 82),
-            new Color(240, 196, 112));
-    }
-
-    private void DrawIncomingTradePanel()
-    {
-        if (_snapshot?.PendingTrade is not { } trade) return;
-
-        var panel = IncomingTradePanelBounds;
-        DrawPanel(panel);
-        var mouse = HudMouse;
-
-        string sourceName = _snapshot.Players
-            .FirstOrDefault(p => p.Id == trade.SourcePlayerId)?.Name ?? "Игрок";
-
-        Rectangle Row(int y, int height = 30) => new(panel.X + 14, panel.Y + y, panel.Width - 28, height);
-        CenteredLabel("Предложение обмена", Row(8, 34), 29);
-        CenteredLabel($"От: {sourceName}", Row(43), 22, new Color(240, 196, 112));
-        CenteredLabel($"Отдаёт вам: {FormatResourceDict(trade.Offer)}", Row(75), 22, new Color(180, 232, 168));
-        CenteredLabel($"Просит у вас: {FormatResourceDict(trade.Request)}", Row(107), 22, new Color(238, 182, 148));
-
-        bool canAfford = _snapshot.You is { } me &&
-                         trade.Request.All(item => me.Resource(item.Key) >= item.Value);
-        if (!canAfford)
-        {
-            CenteredLabel("Недостаточно ресурсов для принятия.", Row(140), 22, new Color(232, 140, 120));
-        }
-
-        int buttonWidth = (panel.Width - 36) / 2;
-        var acceptButton = new Rectangle(panel.X + 12, panel.Bottom - 46, buttonWidth, 34);
-        var declineButton = new Rectangle(acceptButton.Right + 12, panel.Bottom - 46, buttonWidth, 34);
-        DrawButton(acceptButton, "Принять", canAfford, canAfford && acceptButton.Contains(mouse));
-        DrawButton(declineButton, "Отклонить", true, declineButton.Contains(mouse));
-    }
-
     private static string ResourceName(ResourceType resource) => resource switch
     {
         ResourceType.Meat => "Мясо",
@@ -1307,12 +1115,6 @@ public partial class MapScreen
         ResourceType.Hides => "Шкуры",
         _ => resource.ToString(),
     };
-
-    private static string FormatResourceDict(Dictionary<ResourceType, int> resources)
-    {
-        var nonZero = resources.Where(kv => kv.Value > 0).Select(kv => $"{ResourceName(kv.Key)}: {kv.Value}").ToArray();
-        return nonZero.Length == 0 ? "ничего" : string.Join(", ", nonZero);
-    }
 
     // В фазах броска и торговли та же кнопка двигает фазу, а не передаёт ход.
     private string EndTurnLabel => _snapshot?.Phase switch

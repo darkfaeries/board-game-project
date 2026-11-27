@@ -46,6 +46,25 @@ public sealed class PlayerSnapshot
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string DisplayName
+    {
+        get
+        {
+            const string guestPrefix = "Player-";
+            if (Name.StartsWith(guestPrefix, StringComparison.Ordinal))
+            {
+                var guestId = Name.AsSpan(guestPrefix.Length);
+                if (guestId.Length == 6 ||
+                    (guestId.Length == 39 && guestId[6] == '-' && Guid.TryParseExact(guestId[7..], "N", out _)))
+                {
+                    string code = guestId[..6].ToString();
+                    if (code.All(char.IsAsciiHexDigit)) return $"Игрок-{code}";
+                }
+            }
+            return Name;
+        }
+    }
+
     public PlayerColor Color { get; set; }
     public Dictionary<ResourceType, int> Resources { get; } = new();
     public Dictionary<ProgressType, int> Progress { get; } = new();

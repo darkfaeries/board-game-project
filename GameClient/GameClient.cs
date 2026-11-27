@@ -90,7 +90,8 @@ public class GameClient : IAsyncDisposable
                     if (responseBody.Contains("Username already exists", StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    return (false, $"Не удалось создать гостевого пользователя: {responseBody}");
+                    _logger.LogWarning("Guest registration failed with status {StatusCode}", response.StatusCode);
+                    return (false, "Сервер не смог создать гостевого игрока.");
                 }
 
                 string tokenResponse = responseBody.Trim();
@@ -98,7 +99,7 @@ public class GameClient : IAsyncDisposable
                     ? JsonSerializer.Deserialize<string>(tokenResponse)
                     : tokenResponse;
                 if (string.IsNullOrWhiteSpace(_accessToken))
-                    return (false, "Сервер не вернул JWT-токен.");
+                    return (false, "Сервер не подтвердил вход.");
 
                 AuthenticatedUsername = guestName;
                 return (true, null);
@@ -109,7 +110,7 @@ public class GameClient : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to register guest user");
-            return (false, $"Не удалось авторизоваться: {ex.Message}");
+            return (false, ex is HttpRequestException ? "Не удалось связаться с сервером." : "Не удалось войти в игру.");
         }
     }
 
@@ -148,7 +149,7 @@ public class GameClient : IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(gameCode))
         {
-            return (false, "Game code cannot be empty.");
+            return (false, "Введите код комнаты.");
         }
 
         try
@@ -336,7 +337,7 @@ public class GameClient : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(GameCode))
         {
             ClearSession();
-            return (false, "You are not connected to a session.");
+            return (false, "Вы не подключены к игре.");
         }
 
         try
@@ -361,7 +362,7 @@ public class GameClient : IAsyncDisposable
         {
             // Сервер отклонил действие (неверная фаза, не тот игрок) — сессию не теряем.
             _logger.LogWarning(ex, "Hub rejected {Method}", methodName);
-            return (false, $"Hub Error: {ex.Message}");
+            return (false, TranslateServerError(ex.Message));
         }
         catch (Exception ex)
         {
@@ -386,12 +387,36 @@ public class GameClient : IAsyncDisposable
 
         var message = ex switch
         {
-            HubException => $"Hub Error: {ex.Message}",
-            HttpRequestException => $"Network Error: {ex.Message}",
-            _ => $"Unexpected Error: {ex.Message}",
+            HubException => TranslateServerError(ex.Message),
+            HttpRequestException => "Не удалось связаться с сервером.",
+            _ => null,
         };
 
         return (false, message);
+    }
+
+    private static string? TranslateServerError(string message)
+    {
+        // SignalR can prepend the hub method name to the server's error text.
+        if (message.Contains("SessionId doesn`t exist", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Session not found", StringComparison.OrdinalIgnoreCase))
+            return "Комната не найдена. Проверьте код.";
+        if (message.Contains("No available colors", StringComparison.OrdinalIgnoreCase))
+            return "В комнате нет свободных мест.";
+        if (message.Contains("Player already exists", StringComparison.OrdinalIgnoreCase))
+            return "Вы уже в этой комнате.";
+        if (message.Contains("Failed to start game", StringComparison.OrdinalIgnoreCase))
+            return "Не удалось начать игру. Проверьте, что в комнате есть хотя бы три игрока.";
+        if (message.Contains("It is not your turn", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("'s turn.", StringComparison.OrdinalIgnoreCase))
+            return "Сейчас ход другого игрока.";
+        if (message.Contains("pending decisions to resolve", StringComparison.OrdinalIgnoreCase))
+            return "Сначала завершите незаконченные действия.";
+        if (message.Contains("not enough resources", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("cannot afford", StringComparison.OrdinalIgnoreCase))
+            return "Недостаточно ресурсов.";
+
+        return null;
     }
 
     private void ClearSession()

@@ -169,10 +169,11 @@ public partial class MapScreen
         _spriteBatch.Begin(transformMatrix: HudToScreen, samplerState: SamplerState.LinearClamp);
         var mouse = HudMouse;
         Art("dock", new Rectangle(22, 18, 450, 88));
-        string turn = game.IsMyTurn ? "Ваш ход" : game.CurrentPlayer?.Name ?? "Ожидание";
+        string turn = game.IsMyTurn ? "Ваш ход" : game.CurrentPlayer?.DisplayName ?? "Ожидание";
         Label(turn, new Rectangle(76, 31, 216, 52), 40);
         Label(game.TurnNumber is int n ? $"Ход {n}" : PhaseName(game.Phase), new Rectangle(306, 39, 125, 43), 30);
         PlayerSnapshot? hoveredPlayer = null;
+        int hoveredCardCenter = 0;
         for (int i = 0; i < game.Players.Count; i++)
         {
             var player = game.Players[i];
@@ -183,7 +184,11 @@ public partial class MapScreen
             Art(portrait, new Rectangle(x + 10, 19, 80, 80));
             Label(tribe + "\nплемя", new Rectangle(x + 110, 26, 118, 50), 20);
             Label(Score(player.VictoryPoints), new Rectangle(x + 172, 62, 80, 27), 20);
-            if (card.Contains(mouse)) hoveredPlayer = player;
+            if (card.Contains(mouse))
+            {
+                hoveredPlayer = player;
+                hoveredCardCenter = card.Center.X;
+            }
         }
         DrawPaintedButton(MenuButton, "Меню", true, MenuButton.Contains(mouse));
         DrawPanel(Sidebar, 36);
@@ -211,8 +216,8 @@ public partial class MapScreen
             Label(status, new Rectangle(800, 975, 620, 44), 26);
         }
         if (new Rectangle(22, 18, 450, 88).Contains(mouse))
-            CenteredLabel($"{game.You?.Name} · Код игры {game.GameCode}", new Rectangle(28, 102, 450, 38), 23);
-        if (hoveredPlayer != null) DrawPlayerDetails(hoveredPlayer);
+            CenteredLabel($"{game.You?.DisplayName} · Код игры {game.GameCode}", new Rectangle(28, 102, 450, 38), 23);
+        if (hoveredPlayer != null) DrawPlayerDetails(hoveredPlayer, hoveredCardCenter);
         if (_tradeOpen && game.Phase == TurnPhase.Trade && game.IsMyTurn) DrawTradePanel();
         if (HasPendingDiscards)
         {
@@ -273,14 +278,31 @@ public partial class MapScreen
         CenteredLabel(text, bounds, 22);
     }
 
-    private void DrawPlayerDetails(PlayerSnapshot player)
+    private void DrawPlayerDetails(PlayerSnapshot player, int cardCenter)
     {
-        var panel = new Rectangle(510, 115, 596, 150);
-        DrawPanel(panel);
-        Label(player.Name, new Rectangle(530, 126, 550, 34), 28);
-        string inventory = string.Join(" · ", Resources.Select(r => $"{ResourceName(r.Type)} {player.Resource(r.Type)}"));
-        Label(inventory, new Rectangle(530, 167, 550, 30), 22);
-        Label($"Лагеря {player.Camps.Count} · Исследователи {player.Explorers.Count} · Племена {player.TribesCollected}",
-            new Rectangle(530, 209, 550, 30), 22);
+        const int width = 576;
+        int x = Math.Clamp(cardCenter - width / 2, 20, DesignArea.Right - width - 20);
+        var panel = new Rectangle(x, 115, width, 216);
+        Art("action-dialog-frame", panel);
+
+        Art(Identity(player.Color).Portrait, new Rectangle(panel.X + 41, panel.Y + 24, 50, 50));
+        CenteredLabel(player.DisplayName, new Rectangle(panel.X + 108, panel.Y + 21, 411, 58), 29, wrap: true);
+        _spriteBatch.Draw(_pixel, new Rectangle(panel.X + 39, panel.Y + 84, width - 78, 1), Color.Wheat * .50f);
+
+        const int cellWidth = 124;
+        for (int i = 0; i < Resources.Length; i++)
+        {
+            var (resource, icon) = Resources[i];
+            int cellX = panel.X + 40 + i * cellWidth;
+            var cell = new Rectangle(cellX + 3, panel.Y + 94, cellWidth - 6, 63);
+            _spriteBatch.Draw(_pixel, cell, Color.Black * .28f);
+            Art(icon, new Rectangle(cellX + 15, panel.Y + 100, 31, 31));
+            CenteredLabel(player.Resource(resource).ToString(),
+                new Rectangle(cellX + 52, panel.Y + 100, 57, 31), 27);
+            CenteredLabel(ResourceName(resource), new Rectangle(cell.X, panel.Y + 130, cell.Width, 25), 19);
+        }
+
+        CenteredLabel($"Лагеря {player.Camps.Count} · Исследователи {player.Explorers.Count} · Племена {player.TribesCollected}",
+            new Rectangle(panel.X + 36, panel.Y + 165, width - 72, 29), 22);
     }
 }

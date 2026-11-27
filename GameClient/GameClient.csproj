@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GameDomain\GameDomain.csproj" />
+    <EmbeddedResource Include="assets/launcher.bmp" LogicalName="Icon.bmp" />
   </ItemGroup>
 
   <ItemGroup>

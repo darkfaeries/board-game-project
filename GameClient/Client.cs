@@ -23,6 +23,8 @@ namespace GameClient
 
     public class Client : Game
     {
+        private const string JoinPrompt = "Создайте игру или введите код комнаты.";
+
         private GraphicsDeviceManager _graphics;
         private Desktop _desktop = null!;
         private AppState _appState = AppState.MainMenu;
@@ -72,24 +74,24 @@ namespace GameClient
         private bool _gameStarted;
         private int _gameStartEventPending;
 
-        public Client()
+        public Client(bool startWindowed = false, int? windowNumber = null)
         {
             _graphics = new GraphicsDeviceManager(this);
             var displayMode = GraphicsAdapter.DefaultAdapter.CurrentDisplayMode;
-            _graphics.PreferredBackBufferWidth = displayMode.Width;
-            _graphics.PreferredBackBufferHeight = displayMode.Height;
-            _graphics.IsFullScreen = true;
-            _graphics.HardwareModeSwitch = false;
-            _graphics.PreferMultiSampling = true;
-
             // F11/Alt+Enter returns to a usable window instead of opening a
             // 1920x1080 window that may not fit on the current monitor.
             _windowedWidth = Math.Min(1600, displayMode.Width);
             _windowedHeight = Math.Min(900, displayMode.Height);
+            _graphics.PreferredBackBufferWidth = startWindowed ? _windowedWidth : displayMode.Width;
+            _graphics.PreferredBackBufferHeight = startWindowed ? _windowedHeight : displayMode.Height;
+            _graphics.IsFullScreen = !startWindowed;
+            _graphics.HardwareModeSwitch = false;
+            _graphics.PreferMultiSampling = true;
 
             Content.RootDirectory = "Content";
             IsMouseVisible = true;
 
+            Window.Title = windowNumber is int number ? $"Каменный век · Окно {number}" : "Каменный век";
             Window.AllowUserResizing = true;
             Window.ClientSizeChanged += OnClientSizeChanged;
             Window.KeyDown += OnKeyDown;
@@ -252,9 +254,9 @@ namespace GameClient
                 _pendingTradeNotice = null;
                 while (_pendingTribeCollections.TryDequeue(out _)) { }
                 _mapScreen.Reset();
-                _createLabelMain.Text = _createLabelShadow.Text = "Create";
-                _connectLabelMain.Text = _connectLabelShadow.Text = "Connect";
-                _statusLabelMain.Text = _statusLabelShadow.Text = "Вы не подключены к игре. Создайте новую игру.";
+                _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Подключиться";
+                _statusLabelMain.Text = _statusLabelShadow.Text = JoinPrompt;
                 _statusLabelMain.TextColor = Color.LightCoral;
             };
         }
@@ -393,8 +395,8 @@ namespace GameClient
 
             var statusContainer = new Panel { Width = 750, Height = 100, HorizontalAlignment = HorizontalAlignment.Center };
             statusContainer.Margin = new Thickness(0, 0, 0, 0);
-            _statusLabelShadow = new Label { Text = "Вы не подключены к игре.\nСоздайте новую игру.", TextColor = Color.Black * 0.7f, Wrap = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Font = regularFont, Left = 2, Top = 2 };
-            _statusLabelMain = new Label { Text = "Вы не подключены к игре.\nСоздайте новую игру.", TextColor = Color.LightCoral, Wrap = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Font = regularFont };
+            _statusLabelShadow = new Label { Text = JoinPrompt, TextColor = Color.Black * 0.7f, Wrap = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Font = regularFont, Left = 2, Top = 2 };
+            _statusLabelMain = new Label { Text = JoinPrompt, TextColor = Color.LightCoral, Wrap = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Font = regularFont };
             statusContainer.Widgets.Add(_statusLabelShadow);
             statusContainer.Widgets.Add(_statusLabelMain);
             contentStack.Widgets.Add(statusContainer);
@@ -410,8 +412,8 @@ namespace GameClient
             };
 
             var createTextContainer = new Panel { Margin = new Thickness(0, -10, 0, 0) };
-            _createLabelShadow = new Label { Text = "Create", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
-            _createLabelMain = new Label { Text = "Create", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
+            _createLabelShadow = new Label { Text = "Создать игру", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
+            _createLabelMain = new Label { Text = "Создать игру", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
             createTextContainer.Widgets.Add(_createLabelShadow);
             createTextContainer.Widgets.Add(_createLabelMain);
 
@@ -426,8 +428,8 @@ namespace GameClient
             buttonsPanel.Widgets.Add(WrapWithShadow(_createButton, buttonTex, 300, 110));
 
             var connectTextContainer = new Panel { Margin = new Thickness(0, -10, 0, 0) };
-            _connectLabelShadow = new Label { Text = "Connect", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
-            _connectLabelMain = new Label { Text = "Connect", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
+            _connectLabelShadow = new Label { Text = "Подключиться", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
+            _connectLabelMain = new Label { Text = "Подключиться", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
             connectTextContainer.Widgets.Add(_connectLabelShadow);
             connectTextContainer.Widgets.Add(_connectLabelMain);
 
@@ -442,8 +444,8 @@ namespace GameClient
             buttonsPanel.Widgets.Add(WrapWithShadow(_connectButton, buttonTex, 300, 110));
 
             var exitTextContainer = new Panel { Margin = new Thickness(0, -10, 0, 0) };
-            var exitLabelShadow = new Label { Text = "Exit", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
-            var exitLabelMain = new Label { Text = "Exit", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
+            var exitLabelShadow = new Label { Text = "Выйти", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.Black * 0.7f, Font = regularFont, Left = 2, Top = 2 };
+            var exitLabelMain = new Label { Text = "Выйти", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextColor = Color.White, Font = regularFont };
             exitTextContainer.Widgets.Add(exitLabelShadow);
             exitTextContainer.Widgets.Add(exitLabelMain);
 
@@ -663,7 +665,7 @@ namespace GameClient
                 return;
             }
 
-            _createLabelMain.Text = _createLabelShadow.Text = "Creating...";
+            _createLabelMain.Text = _createLabelShadow.Text = "Создаём игру…";
             _createButton.Enabled = false;
             _connectButton.Enabled = false;
 
@@ -672,7 +674,7 @@ namespace GameClient
             {
                 _statusLabelMain.Text = _statusLabelShadow.Text = auth.Error ?? "Ошибка авторизации";
                 _statusLabelMain.TextColor = Color.LightCoral;
-                _createLabelMain.Text = _createLabelShadow.Text = "Create";
+                _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
                 _createButton.Enabled = true;
                 _connectButton.Enabled = true;
                 return;
@@ -693,7 +695,7 @@ namespace GameClient
             }
 
             if (!_isConnected)
-                _createLabelMain.Text = _createLabelShadow.Text = "Create";
+                _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
 
             _createButton.Enabled = true;
             _connectButton.Enabled = true;
@@ -703,7 +705,7 @@ namespace GameClient
         {
             if (_isConnected)
             {
-                _connectLabelMain.Text = _connectLabelShadow.Text = "Disconnecting...";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Отключаемся…";
                 _connectButton.Enabled = false;
                 await Disconnect();
                 _connectButton.Enabled = true;
@@ -718,7 +720,7 @@ namespace GameClient
 
         private async Task ConnectToSessionAsync(string gameCode)
         {
-            _connectLabelMain.Text = _connectLabelShadow.Text = "Connecting...";
+            _connectLabelMain.Text = _connectLabelShadow.Text = "Подключаемся…";
             _connectButton.Enabled = false;
 
             var result = await _networkClient.ConnectAsync(gameCode, _playerName);
@@ -729,15 +731,15 @@ namespace GameClient
                 _snapshotDirty = true;
                 _statusLabelMain.Text = _statusLabelShadow.Text = $"Успешно подключено к игре: {gameCode}!";
                 _statusLabelMain.TextColor = Color.LightGreen;
-                _createLabelMain.Text = _createLabelShadow.Text = "Start Game";
-                _connectLabelMain.Text = _connectLabelShadow.Text = "Disconnect";
+                _createLabelMain.Text = _createLabelShadow.Text = "Начать игру";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Отключиться";
             }
             else
             {
-                _statusLabelMain.Text = _statusLabelShadow.Text = result.Error ?? "Ошибка сети";
+                _statusLabelMain.Text = _statusLabelShadow.Text = result.Error ?? "Не удалось подключиться к игре";
                 _statusLabelMain.TextColor = Color.LightCoral;
-                _createLabelMain.Text = _createLabelShadow.Text = "Create";
-                _connectLabelMain.Text = _connectLabelShadow.Text = "Connect";
+                _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
+                _connectLabelMain.Text = _connectLabelShadow.Text = "Подключиться";
             }
 
             _connectButton.Enabled = true;
@@ -751,10 +753,10 @@ namespace GameClient
             _mapScreen.Reset();
             _pendingSnapshot = null;
             _snapshotDirty = false;
-            _statusLabelMain.Text = _statusLabelShadow.Text = "Вы не подключены к игре. Создайте новую игру.";
+            _statusLabelMain.Text = _statusLabelShadow.Text = JoinPrompt;
             _statusLabelMain.TextColor = Color.LightCoral;
-            _createLabelMain.Text = _createLabelShadow.Text = "Create";
-            _connectLabelMain.Text = _connectLabelShadow.Text = "Connect";
+            _createLabelMain.Text = _createLabelShadow.Text = "Создать игру";
+            _connectLabelMain.Text = _connectLabelShadow.Text = "Подключиться";
         }
 
         protected override void Update(GameTime gameTime)
@@ -790,7 +792,7 @@ namespace GameClient
                 _mapScreen.MarkTribeCollected(nodeCoords);
 
             if (System.Threading.Interlocked.Exchange(ref _pendingTradeNotice, null) is { } tradeNotice)
-                _mapScreen.ShowMessage(tradeNotice);
+                _mapScreen.ShowMessage(tradeNotice, isError: false);
 
             if (_pendingSnapshot is { } snapshot)
             {
