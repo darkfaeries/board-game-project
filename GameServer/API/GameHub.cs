@@ -17,12 +17,13 @@ partial class GameHub : Hub
     private readonly ConnectionManager _connectionManager;
     private readonly IGameService _gameService;
 	private readonly IFriendService _friendService;
+    private readonly IFriendNotifier _friendNotifier;
 
     public GameHub(
         ILogger<GameHub> logger, IGameStore store, 
         ITurnService turnService, IPlayerService playerService,
         IGameService gameService, ConnectionManager connectionManager,
-		IFriendService friendService
+		IFriendService friendService, IFriendNotifier friendNotifier
         )
     {
         _logger = logger;
@@ -32,13 +33,18 @@ partial class GameHub : Hub
         _connectionManager = connectionManager;
         _gameService = gameService;
 		_friendService = friendService;
+        _friendNotifier = friendNotifier;
     }
 
     public override async Task OnConnectedAsync()
     {
         var userId = GetUserIdFromContext();
-        _connectionManager.AddConnection(Context.ConnectionId, userId);
-
+        bool wasOnlineBefore = _connectionManager.IsOnline(userId);
+    
+        _connectionManager.AddConnection(Context.ConnectionId, userId); 
+    
+        await OnFriendsConnectedAsync(userId, !wasOnlineBefore);
+        
         await base.OnConnectedAsync();
     }
 
@@ -609,6 +615,11 @@ partial class GameHub : Hub
         var userId = _connectionManager.RemoveConnection(Context.ConnectionId);
         if (userId != null)
         {
+            bool isStillOnline = _connectionManager.IsOnline(userId.Value);
+            if (!isStillOnline)
+            {
+                await OnFriendsDisconnectedAsync(userId.Value);
+            }
             foreach (var (code, session) in _store.GetSessions())
             {
                 var player = session.GetGameState().GetPlayer(userId.Value);

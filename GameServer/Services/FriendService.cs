@@ -3,11 +3,16 @@ namespace GameServer;
 public class FriendService : IFriendService
 {
     private readonly IFriendshipStore _store;
+    private readonly IFriendNotifier _notifier;
+    private readonly IPresenceService _presence;
     private readonly ILogger<FriendService> _logger;
 
-    public FriendService(IFriendshipStore store, ILogger<FriendService> logger)
+    public FriendService(IFriendshipStore store, IFriendNotifier notifier,
+        IPresenceService presence, ILogger<FriendService> logger)
     {
         _store = store;
+        _notifier = notifier;
+        _presence = presence;
         _logger = logger;
     }
 
@@ -44,7 +49,6 @@ public class FriendService : IFriendService
             await AcceptRequestAsync(userId, existing.Id);
             return;
         }
-
         var friendship = new Friendship
         {
             Id = Guid.NewGuid(),
@@ -55,6 +59,9 @@ public class FriendService : IFriendService
         };
         await _store.AddAsync(friendship);
         _logger.LogInformation($"Friend request {friendship.Id}: {userId} -> {targetId}");
+        var namesDict = await _store.GetUsernamesAsync(new[] { userId });
+        var senderName = namesDict.TryGetValue(userId, out var name) ? name : "Unknown";
+        await _notifier.RequestReceivedAsync(targetId, new FriendRequestDto(friendship.Id, userId, senderName, friendship.CreatedAt));
     }
 
     public async Task AcceptRequestAsync(Guid userId, Guid requestId)
@@ -79,6 +86,10 @@ public class FriendService : IFriendService
         request.RespondedAt = DateTime.UtcNow;
         await _store.UpdateAsync(request);
         _logger.LogInformation($"Friend request {requestId} accepted by {userId}");
+        
+        var names = await _store.GetUsernamesAsync(new[] { userId });
+        var accepterName = names.TryGetValue(userId, out var name) ? name : "Unknown";
+        await _notifier.RequestAcceptedAsync(request.RequesterId, new FriendDto(userId, accepterName, _presence.GetStatus(userId)));
     }
 
     public async Task DeclineRequestAsync(Guid userId, Guid requestId)
@@ -109,10 +120,13 @@ public class FriendService : IFriendService
         var link = await _store.FindAnyBetweenAsync(userId, friendId);
         if (link == null || link.Status != FriendshipStatus.Accepted)
         {
+            _logger.LogWarning($"User {userId} tried to remove {friendId}, but they are not friends.");
             throw new FriendException("You are not friends with this user.");
         }
 
         await _store.DeleteAsync(link);
+        _logger.LogInformation($"Friend link {link.Id} deleted: {userId} unfriended {friendId}");
+        await _notifier.FriendRemovedAsync(friendId, userId);
     }
 
     public async Task<List<FriendDto>> GetFriendsAsync(Guid userId)
@@ -121,8 +135,9 @@ public class FriendService : IFriendService
         var friendIds = links.Select(f => f.RequesterId == userId ? f.AddresseeId : f.RequesterId).ToList();
         var names = await _store.GetUsernamesAsync(friendIds);
 
-        return friendIds.Where(names.ContainsKey).Select(id => new FriendDto(id, names[id], PresenceStatus.Offline))
-            .OrderByDescending(f => f.Status != PresenceStatus.Offline).ThenBy(f => f.Username).ToList();
+        return friendIds.Where(names.ContainsKey).Select(id => new FriendDto(id, names[id], _presence
+                .GetStatus(id))).OrderByDescending(f => f.Status != PresenceStatus.Offline)
+                .ThenBy(f => f.Username).ToList();
     }
 
     public async Task<List<FriendRequestDto>> GetRequestsAsync(Guid userId)

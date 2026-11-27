@@ -54,6 +54,9 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<IFriendshipStore, EfFriendshipStore>();
 builder.Services.AddScoped<IFriendService, FriendService>();
 
+builder.Services.AddScoped<IFriendNotifier, FriendNotifier>(); 
+builder.Services.AddSingleton<IPresenceService, PresenceService>();
+
 builder.Services.AddDbContext<UserDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 

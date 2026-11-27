@@ -51,4 +51,33 @@ partial class GameHub
             throw new HubException(ex.Message);
         }
     }
+
+    private async Task OnFriendsConnectedAsync(Guid userId, bool isFirstConnection)
+    {
+        try
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, FriendGroups.For(userId));
+            if (isFirstConnection)
+            {
+                await _friendNotifier.StatusChangedAsync(userId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to process friends presence on connect.");
+        }
+    }
+    private async Task OnFriendsDisconnectedAsync(Guid userId)
+    {
+        try
+        {
+            await _friendNotifier.StatusChangedAsync(userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to process friends presence on disconnect.");
+        }
+    }
+    
+    
 }

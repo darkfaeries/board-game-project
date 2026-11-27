@@ -9,15 +9,17 @@ public static class FriendGroups
 }
 
 
-internal sealed class FriendNotifier : IFriendNotifier
+sealed class FriendNotifier : IFriendNotifier
 {
     private readonly IHubContext<GameHub> _hub;
     private readonly IFriendshipStore _store;
+    private readonly IPresenceService _presence;
 
-    public FriendNotifier(IHubContext<GameHub> hub, IFriendshipStore store)
+    public FriendNotifier(IHubContext<GameHub> hub, IFriendshipStore store, IPresenceService presence)
     {
         _hub = hub;
         _store = store;
+        _presence = presence;
     }
 
     public Task RequestReceivedAsync(Guid toUserId, FriendRequestDto request) =>
@@ -36,12 +38,9 @@ internal sealed class FriendNotifier : IFriendNotifier
             .Select(f => FriendGroups.For(f.RequesterId == userId ? f.AddresseeId : f.RequesterId))
             .ToList();
 
-        if (groups.Count == 0)
-        {
-            return;
-        }
+        if (groups.Count == 0) return;
 
-        var dto = new FriendStatusChangedDto(userId);
+        var dto = new FriendStatusChangedDto(userId, _presence.GetStatus(userId));
         await _hub.Clients.Groups(groups).SendAsync("FriendStatusChanged", dto);
     }
 }
