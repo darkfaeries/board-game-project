@@ -1,0 +1,86 @@
+name: Board Game backend
+
+on:
+  pull_request:
+    paths: ['GameServer/**', 'GameDomain/**', 'deploy/**', '.dockerignore', '.github/workflows/backend.yml']
+  push:
+    branches: [main, deploy]
+    paths: ['GameServer/**', 'GameDomain/**', 'deploy/**', '.dockerignore', '.github/workflows/backend.yml']
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy this build to the VPS (main only)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish immutable commit tag
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: GameServer/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ghcr.io/darkfaeries/board-game-project/backend:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/darkfaeries/board-game-project
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: read
+    concurrency:
+      group: game2-vps-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Deploy only the built image by digest
+        env:
+          DEPLOY_KEY: ${{ secrets.GAME2_DEPLOY_KEY }}
+          SSH_HOST: ${{ vars.GAME2_SSH_HOST }}
+          SSH_KNOWN_HOSTS: ${{ vars.GAME2_SSH_KNOWN_HOSTS }}
+          IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ -n "$DEPLOY_KEY" && -n "$SSH_HOST" && -n "$SSH_KNOWN_HOSTS" ]]
+          key_dir=$(mktemp -d)
+          trap 'rm -rf "$key_dir"' EXIT
+          umask 077
+          printf '%s\n' "$DEPLOY_KEY" > "$key_dir/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$key_dir/known_hosts"
+          unset DEPLOY_KEY
+          printf '%s\n%s\n' "$REGISTRY_USER" "$REGISTRY_TOKEN" | \
+            ssh -T -i "$key_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$key_dir/known_hosts" \
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+            "game2-deploy@$SSH_HOST" "deploy $IMAGE_DIGEST"

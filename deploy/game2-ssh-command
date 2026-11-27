@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+# Root-owned forced SSH command; never evaluate SSH_ORIGINAL_COMMAND as shell code.
+case "${SSH_ORIGINAL_COMMAND-}" in
+  logs)
+    exec /usr/bin/sudo -n /usr/local/sbin/game2-logs
+    ;;
+  deploy\ sha256:*)
+    digest=${SSH_ORIGINAL_COMMAND#deploy }
+    printf '%s\n' "$digest" | /usr/bin/grep -Eq '^sha256:[0-9a-f]{64}$' || exit 64
+    exec /usr/bin/sudo -n /usr/local/sbin/game2-deploy "$digest"
+    ;;
+  *)
+    echo 'Only deploy sha256:<64 lowercase hex characters> or logs is accepted.' >&2
+    exit 64
+    ;;
+esac

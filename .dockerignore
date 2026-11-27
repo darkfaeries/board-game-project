@@ -1,0 +1,12 @@
+**
+!GameServer/
+!GameServer/**
+!GameDomain/
+!GameDomain/**
+!deploy/
+!deploy/backend-healthcheck.sh
+**/bin/
+**/obj/
+**/logs/
+**/.env*
+**/appsettings.Development.json

@@ -1,0 +1,40 @@
+# Installed by the administrator as /etc/game2/backend.compose.yaml.
+# CI can select only GAME2_BACKEND_IMAGE; it cannot replace this file.
+name: game2
+services:
+  backend:
+    image: ${GAME2_BACKEND_IMAGE:?required}
+    restart: unless-stopped
+    user: '1654:1654'
+    read_only: true
+    env_file: /etc/game2/backend.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: '8080'
+      DOTNET_gcServer: '0'
+      DOTNET_GCHeapHardLimit: '8000000'
+      Serilog__WriteTo__1__Args__path: /tmp/logs/app-.log
+      Serilog__WriteTo__1__Args__fileSizeLimitBytes: '1048576'
+      Serilog__WriteTo__1__Args__rollOnFileSizeLimit: 'true'
+      Serilog__WriteTo__1__Args__retainedFileCountLimit: '2'
+    ports: ['127.0.0.1:8081:8080']
+    networks: [frontend, private]
+    tmpfs: ['/tmp:size=16m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: '5m'
+        max-file: '2'
+networks:
+  frontend:
+    external: true
+    name: game2_frontend
+  private:
+    external: true
+    name: game2_private
