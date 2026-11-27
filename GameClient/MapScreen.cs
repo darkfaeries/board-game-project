@@ -447,26 +447,25 @@ public partial class MapScreen
                                           trade.TargetPlayerId == myId;
     private bool HasPendingDiscard => _snapshot?.You?.DiscardResourcesRequired is > 0;
     private bool HasPendingDiscards => _snapshot?.Players.Any(player => player.DiscardResourcesRequired is > 0) == true;
-    private static Rectangle ProgressButtonBounds(int index) => new(1510, 414 + index * 44, 344, 44);
+    private static Rectangle ProgressRowBounds(int index) => new(1510, 414 + index * 44, 344, 44);
 
     private bool HandleProgressClick(Point point)
     {
         for (int i = 0; i < ProgressTypes.Length; i++)
         {
-            if (!ProgressButtonBounds(i).Contains(point)) continue;
+            if (!ProgressRowBounds(i).Contains(point)) continue;
 
             var progressType = ProgressTypes[i];
             if (_snapshot?.You is not { } player) return true;
 
             int level = player.ProgressLevel(progressType);
-            if (level >= 5)
+            if (level >= GameConstants.MaxProgressLevel)
             {
                 ShowMessage("Этот параметр уже достиг максимального уровня.");
                 return true;
             }
 
-            var cost = ProgressCost(level + 1);
-            if (!HasResources(player, cost.Select(item => (item.Key, item.Value)).ToArray()))
+            if (!HasResources(player, ProgressCost(level + 1)))
             {
                 ShowMessage("Не хватает ресурсов для повышения параметра.");
                 return true;
@@ -487,14 +486,19 @@ public partial class MapScreen
         ProgressType.Clothing,
     };
 
-    private static Dictionary<ResourceType, int> ProgressCost(int targetLevel) => targetLevel switch
+    private static readonly (ResourceType Resource, int Amount)[][] ProgressCosts =
     {
-        1 => new() { [ResourceType.Flint] = 1 },
-        2 => new() { [ResourceType.Bone] = 1 },
-        3 or 4 => new() { [ResourceType.Bone] = 1, [ResourceType.Flint] = 1 },
-        5 => new() { [ResourceType.Hides] = 1, [ResourceType.Bone] = 1, [ResourceType.Flint] = 1 },
-        _ => new(),
+        new[] { (ResourceType.Flint, 1) },
+        new[] { (ResourceType.Bone, 1) },
+        new[] { (ResourceType.Bone, 1), (ResourceType.Flint, 1) },
+        new[] { (ResourceType.Bone, 1), (ResourceType.Flint, 1) },
+        new[] { (ResourceType.Hides, 1), (ResourceType.Bone, 1), (ResourceType.Flint, 1) }
     };
+
+    private static (ResourceType Resource, int Amount)[] ProgressCost(int targetLevel) =>
+        targetLevel >= 1 && targetLevel <= ProgressCosts.Length
+            ? ProgressCosts[targetLevel - 1]
+            : Array.Empty<(ResourceType, int)>();
 
     private static string ProgressName(ProgressType progressType) => progressType switch
     {
@@ -505,12 +509,8 @@ public partial class MapScreen
         _ => progressType.ToString(),
     };
 
-    private static string ProgressCostLabel(Dictionary<ResourceType, int> cost)
-    {
-        if (cost.Count == 0) return "Макс. уровень";
-
-        return string.Join(", ", cost.Select(item => $"{ResourceName(item.Key)} {item.Value}"));
-    }
+    private static string ProgressCostLabel((ResourceType Resource, int Amount)[] cost) =>
+        string.Join(", ", cost.Select(item => $"{ResourceName(item.Resource)} {item.Amount}"));
 
     private bool CanConfirmMove => _boardActionMode == BoardActionMode.MoveExplorer && _selectedRoute.Count > 1;
 

@@ -239,13 +239,16 @@ public partial class MapScreen
         Label("Развитие племени", new Rectangle(1510, 362, 346, 38), 30);
         for (int i = 0; i < ProgressTypes.Length; i++)
         {
-            var row = ProgressButtonBounds(i);
+            var row = ProgressRowBounds(i);
             var type = ProgressTypes[i];
             int level = me.ProgressLevel(type);
+            bool atMaxLevel = level >= GameConstants.MaxProgressLevel;
+            bool canUpgrade = CanBuild && !HasPendingDiscards && !HasPendingTrade && !atMaxLevel &&
+                              HasResources(me, ProgressCost(level + 1));
             if (row.Contains(mouse))
             {
                 _spriteBatch.Draw(_pixel, row, Color.Wheat * 0.12f);
-                DrawTip(ProgressName(type) + " · " + (level >= GameConstants.MaxProgressLevel ? "Максимальный уровень" :
+                DrawTip(ProgressName(type) + " · " + (atMaxLevel ? "Максимальный уровень" :
                     $"Следующий уровень: {ProgressCostLabel(ProgressCost(level + 1))}"), row.Y);
             }
             Art(ProgressIcons[i], new Rectangle(row.X, row.Y + 4, 34, 34));
@@ -257,6 +260,8 @@ public partial class MapScreen
                 cell.Inflate(-1, -1);
                 _spriteBatch.Draw(_pixel, cell, j < level ? new Color(233, 163, 67) : new Color(39, 43, 43));
             }
+            var upgradeButton = new Rectangle(row.Right - 39, row.Y + 3, 37, 37);
+            DrawTradeControl("barter-plus", upgradeButton, "", 0, canUpgrade, mouse);
         }
         Art("dock", new Rectangle(28, 958, 740, 104));
         for (int i = 0; i < Resources.Length; i++)
