@@ -206,7 +206,7 @@ public class GameService : IGameService
         }
     }
 
-    public MoveResult MoveExplorer(GameSession session, Guid playerId, List<AxialCoords> route)
+    public List<AxialCoords> MoveExplorer(GameSession session, Guid playerId, List<AxialCoords> route)
     {
         lock (session.Gate)
         {
@@ -264,7 +264,7 @@ public class GameService : IGameService
         }
     }
 
-    private MoveResult? ContinueMoving(GameSession session)
+    private List<AxialCoords>? ContinueMoving(GameSession session)
     {
         var state = session.GetGameState();
 
@@ -290,7 +290,6 @@ public class GameService : IGameService
             throw new InvalidOperationException("Invalid pending move state.");
         }
 
-        // An unresolved counter keeps the explorer in transit, even at the final node.
         if (move.ActiveCounter != null)
             return null;
 
@@ -305,11 +304,10 @@ public class GameService : IGameService
             {
                 ProcessExplorationCounter(session);
                 if (move.ActiveCounter != null)
-                    return new MoveResult(route.GetRange(startPos, move.CurPosInRoute - startPos + 1), true);
+                    return route[startPos..(move.CurPosInRoute + 1)];
             }
         }
 
-        // Validate before inserting; leave pending intact if the board is inconsistent.
         if (state.Board.IsOccupied(move.Position))
             throw new GameRuleException("Target node for move explorer is occupied.");
 
@@ -318,7 +316,7 @@ public class GameService : IGameService
 
         return move.CurPosInRoute == startPos
             ? null
-            : new MoveResult(route.GetRange(startPos, move.CurPosInRoute - startPos + 1), false);
+            : route[startPos..(move.CurPosInRoute + 1)];
     }
 
     public bool SubmitChooseEnemy(GameSession session, Guid playerId, Guid decisionId, EnemyType enemyType)
@@ -342,7 +340,12 @@ public class GameService : IGameService
         }
     }
 
-    public (bool isSuccess, MoveResult? moveResult) SubmitChooseEnemyDestination(GameSession session, Guid playerId, Guid decisionId, AxialCoords? destination)
+    public (bool isSuccess, List<AxialCoords>? moveResult) SubmitChooseEnemyDestination(
+        GameSession session,
+        Guid playerId,
+        Guid decisionId,
+        AxialCoords? destination
+    )
     {
         lock (session.Gate)
         {
@@ -374,7 +377,7 @@ public class GameService : IGameService
         }
     }
 
-    public (bool isSuccess, MoveResult? moveResult) SubmitChooseStealTarget(
+    public (bool isSuccess, List<AxialCoords>? moveResult) SubmitChooseStealTarget(
         GameSession session,
         Guid playerId,
         Guid decisionId,
@@ -418,7 +421,7 @@ public class GameService : IGameService
         }
     }
 
-    public (bool isSuccess, MoveResult? moveResult) SubmitChooseDesertificationHex(
+    public (bool isSuccess, List<AxialCoords>? moveResult) SubmitChooseDesertificationHex(
         GameSession session,
         Guid playerId,
         Guid decisionId,

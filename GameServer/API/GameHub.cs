@@ -469,15 +469,82 @@ class GameHub : Hub
 
         try
         {
-            var result = _gameService.MoveExplorer(session, player.Id, route);
-            await Clients.Group(code).SendAsync(
-                "ExplorerMoved", new { player.Id, result.Route, result.DecisionRequired }
-            );
+            List<AxialCoords> result;
+            PendingDecision? decision;
+            lock (session.Gate)
+            {
+                result = _gameService.MoveExplorer(session, player.Id, route);
+                decision = session.GetGameState().PendingDecisions.FirstOrDefault(d => d.PlayerId == player.Id);
+            }
+            await SendExplorerMoveEvents(code, player.Id, result, decision);
         }
         catch (GameRuleException ex)
         {
             throw new HubException(ex.Message);
         }
+    }
+
+    public Task SubmitChooseEnemy(string code, Guid decisionId, EnemyType enemyType)
+        => SubmitExplorationDecision(code, (session, playerId) =>
+            (_gameService.SubmitChooseEnemy(session, playerId, decisionId, enemyType), null));
+
+    public Task SubmitChooseEnemyDestination(string code, Guid decisionId, AxialCoords? destination)
+        => SubmitExplorationDecision(code, (session, playerId) =>
+            _gameService.SubmitChooseEnemyDestination(session, playerId, decisionId, destination));
+
+    public Task SubmitChooseStealTarget(string code, Guid decisionId, Guid? targetPlayerId)
+        => SubmitExplorationDecision(code, (session, playerId) =>
+            _gameService.SubmitChooseStealTarget(session, playerId, decisionId, targetPlayerId));
+
+    public Task SubmitChooseDesertificationHex(string code, Guid decisionId, AxialCoords? hexCoords)
+        => SubmitExplorationDecision(code, (session, playerId) =>
+            _gameService.SubmitChooseDesertificationHex(session, playerId, decisionId, hexCoords));
+
+    private async Task SubmitExplorationDecision(
+        string code,
+        Func<GameSession, Guid, (bool isSuccess, List<AxialCoords>? moveResult)> submit)
+    {
+        var session = _store.GetSession(code)
+            ?? throw new HubException("SessionId doesn`t exist");
+
+        Guid playerId;
+        List<AxialCoords>? moveResult;
+        PendingDecision? decision;
+        try
+        {
+            lock (session.Gate)
+            {
+                var player = session.GetPlayers()
+                    .FirstOrDefault(p => p.ConnectionId == Context.ConnectionId)
+                    ?? throw new HubException("Player not found");
+                EnsureCurrentPlayer(session, player);
+                playerId = player.Id;
+
+                var result = submit(session, playerId);
+                if (!result.isSuccess)
+                    throw new HubException("Failed to submit decision.");
+
+                moveResult = result.moveResult;
+                decision = session.GetGameState().PendingDecisions.FirstOrDefault(d => d.PlayerId == playerId);
+            }
+        }
+        catch (Exception ex) when (ex is GameRuleException or InvalidOperationException)
+        {
+            throw new HubException(ex.Message);
+        }
+
+        await SendExplorerMoveEvents(code, playerId, moveResult, decision);
+    }
+
+    private async Task SendExplorerMoveEvents(
+        string code, Guid playerId, List<AxialCoords>? moveResult, PendingDecision? decision)
+    {
+        if (moveResult != null)
+            await Clients.Group(code).SendAsync(
+                "ExplorerMoved", new { Id = playerId, Route = moveResult });
+
+        if (decision != null)
+            await Clients.Group(code).SendAsync("DesicionRequired", (object)decision);
     }
 
     public async Task AdvanceProgress(string code, ProgressType progressType)
