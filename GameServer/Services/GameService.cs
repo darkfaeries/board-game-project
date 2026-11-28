@@ -57,6 +57,28 @@ public class GameService : IGameService
         state.PendingDecisions.AddRange(decisions);
     }
 
+    public Guid TradeWithPlayer(
+        GameSession session,
+        Guid sourcePlayerId,
+        Guid targetPlayerId,
+        Dictionary<ResourceType, int> offeredResources,
+        Dictionary<ResourceType, int> requestedResources)
+    {
+        var state = session.GetGameState();
+
+        var decision = new TradeDecision
+        {
+            SourcePlayerId = sourcePlayerId,
+            TargetPlayerId = targetPlayerId,
+            OfferedResources = offeredResources,
+            RequestedResources = requestedResources
+        };
+
+        state.PendingDecisions.Add(decision);
+
+        return decision.TradeId;
+    }
+
     public bool SubmitDiscardResources(
         GameSession session,
         Guid playerId,
@@ -86,6 +108,46 @@ public class GameService : IGameService
             session,
             playerId,
             selectedResources);
+
+        state.PendingDecisions.Remove(decision);
+            
+        return true;
+    }
+
+    public bool SubmitTradeDecision(
+        GameSession session,
+        Guid tradeId, bool isAccepted)
+    {
+        var state = session.GetGameState();
+
+        var decision = state.PendingDecisions
+            .OfType<TradeDecision>()
+            .FirstOrDefault(d => d.TradeId == tradeId);
+
+        if (decision == null)
+        {
+            _logger.LogWarning($"Player attempted to submit a trade decision without a pending decision.");
+            return false;
+        }
+
+        if (!isAccepted)
+        {
+            state.PendingDecisions.Remove(decision);
+            return true;
+        }
+
+        var tradeSuccess = _playerService.TradeWithPlayer(
+            session,
+            decision.SourcePlayerId,
+            decision.TargetPlayerId,
+            decision.OfferedResources,
+            decision.RequestedResources);
+
+        if (!tradeSuccess)
+        {
+            _logger.LogWarning($"Trade between player {decision.SourcePlayerId} and player {decision.TargetPlayerId} failed.");
+            return false;
+        }
 
         state.PendingDecisions.Remove(decision);
             
