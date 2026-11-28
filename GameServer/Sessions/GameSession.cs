@@ -6,6 +6,7 @@ namespace GameServer;
 
 public class GameSession(ILogger<GameSession> logger, GameState gameState) : Session
 {
+    public object Gate { get; } = new();
     public string Code { get; } = Guid.NewGuid().ToString("N")[..6].ToUpper();
 
     public bool JoinSession(Player new_player)
@@ -133,9 +134,23 @@ public class GameSession(ILogger<GameSession> logger, GameState gameState) : Ses
             return false;
         }
 
+        var board = gameState.Board;
+
+        if (board.CampPositions.Count != 0 ||  board.ExplorerPositions.Count != 0 ||
+            board.Nodes.Values.Count(node => node.IsStartSpace) < gameState.Players.Count * GameConstants.InitialCampsCount)
+        {
+            logger.LogWarning($"Cannot start game in session {Code}: board is not ready for setup");
+            return false;
+        }
+
+        gameState.SetupPlayerOrder = gameState.Players
+            .Select(player => player.Id)
+            .ToArray();
+
+        gameState.CompletedSetupPlacementsCount = 0;
+        gameState.CurrentPlayerId = gameState.SetupPlayerOrder[0];
         gameState.Status = GameStatus.Setup;
-        gameState.CurrentPlayerId = gameState.Players[0].Id;
-        gameState.Phase = TurnPhase.Roll;
+        gameState.Phase = TurnPhase.Actions;
         return true;
     }
 

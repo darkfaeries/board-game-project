@@ -21,6 +21,9 @@ public class GameState
     public BoardState Board { get; }
     public VictoryState Victory { get; set; } = new VictoryState();
     public List<PendingDecision> PendingDecisions { get; set; } = new();
+    public Guid[] SetupPlayerOrder { get; set; } = Array.Empty<Guid>();
+    public int CompletedSetupPlacementsCount { get; set; }
+    public ExplorerMoveState? PendingExplorerMove { get; set; }
 
     public GameState(BoardState board)
     {
